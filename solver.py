@@ -1,5 +1,5 @@
 # Importing the required modules and classes
-from coordinate import Coordinate
+from location import Location
 from request import Request
 from tool import Tool
 import numpy as np
@@ -18,7 +18,7 @@ VEHICLE_COST = 0
 VEHICLE_DAY_COST = 0
 DISTANCE_COST = 0
 TOOLS = []
-COORDINATES = []
+LOCATIONS = []
 REQUESTS = []
 
 
@@ -31,7 +31,7 @@ def read_tool(tool):
 # Function to read a coordinate from a string representation
 def read_coordinate(coordinate):
     i, x, y = (int(part) for part in coordinate.split())
-    return Coordinate(x, y)
+    return Location(x, y)
 
 
 # Function to read a request from a string representation
@@ -42,10 +42,10 @@ def read_request(request):
 
 # Function to calculate the distance between each pair of coordinates
 def calc_distances():
-    result = np.empty(shape=(len(COORDINATES), len(COORDINATES)))
-    for i in range(len(COORDINATES)):
+    result = np.empty(shape=(len(LOCATIONS), len(LOCATIONS)))
+    for i in range(len(LOCATIONS)):
         for j in range(i):
-            result[i, j] = COORDINATES[i].distance(COORDINATES[j])
+            result[i, j] = LOCATIONS[i].distance(LOCATIONS[j])
     return result
 
 
@@ -57,10 +57,10 @@ def distance_cost(distance):
 # Function to plot all coordinates
 def plot_all():
     # Plot all coordinates with a blue dot marker
-    plt.plot([c.x for c in COORDINATES], [c.y for c in COORDINATES], 'bo')
+    plt.plot([c.x for c in LOCATIONS], [c.y for c in LOCATIONS], 'bo')
 
     # Plot the first coordinate with a red circle marker
-    plt.plot(COORDINATES[0].x, COORDINATES[0].y, 'ro')
+    plt.plot(LOCATIONS[0].x, LOCATIONS[0].y, 'ro')
 
     # Add a title and axis labels
     plt.title('Plot of Coordinates')
@@ -70,6 +70,11 @@ def plot_all():
     # Show the plot
     plt.grid()
     plt.show()
+
+
+def assign_tools():
+    for t in TOOLS:
+        LOCATIONS[0].add_tool(t)
 
 
 # Function to read data from a file
@@ -108,7 +113,7 @@ def read_file(txt):
     # Reading coordinates from file
     no_coordinates = int(txt[12 + no_tools + 2].split(split)[1])
     for i in range(1, no_coordinates + 1):
-        COORDINATES.append(read_coordinate(txt[12 + no_tools + 2 + i]))
+        LOCATIONS.append(read_coordinate(txt[12 + no_tools + 2 + i]))
 
     # Reading requests from file
     no_requests = int(txt[12 + no_tools + no_coordinates + 4].split(split)[1])
@@ -129,7 +134,5 @@ if __name__ == '__main__':
         input_lines = [line.strip() for line in file]
 
     read_file(input_lines)
-
     distances = calc_distances()
-
     plot_all()
