@@ -121,20 +121,21 @@ def read_file(txt):
     for i in range(1, no_requests + 1):
         REQUESTS.append(read_request(txt[12 + no_tools + no_coordinates + 4 + i]))
 
-    def create_file(filename):
-        with open(filename, 'w') as f:
-            f.write(f'DATASET = {DATASET}')
-            f.write(f'NAME = {NAME}')
-            # f.write(f'MAX_NUMBER_OF_VEHICLES = {}')
-            # f.write(f'NUMBER_OF_VEHICLE_DAYS = {}')
-            # f.write(f'TOOL_USE = {}')
-            # f.write(f'DISTANCE = {}')
-            # f.write(f'COST = {}')
-            #
-            # for i in range(1, DAYS+1):
-            #     f.write(f'DAY = {i}\n')
-            #     f.write(f'NUMBER_OF_VEHICLES = {}')
-            #     f.write(f'{}')
+
+def create_file(filename):
+    with open(filename, 'w') as f:
+        f.write(f'DATASET = {DATASET}\n')
+        f.write(f'NAME = {NAME}\n\n')
+        # f.write(f'MAX_NUMBER_OF_VEHICLES = {}\n')
+        # f.write(f'NUMBER_OF_VEHICLE_DAYS = {}\n')
+        # f.write(f'TOOL_USE = {}\n')
+        # f.write(f'DISTANCE = {}\n')
+        # f.write(f'COST = {}\n\n')
+        #
+        # for i in range(1, DAYS+1):
+        #     f.write(f'DAY = {i}\n')
+        #     f.write(f'NUMBER_OF_VEHICLES = {}\n')
+        #     f.write(f'{}\n')
 
 
 if __name__ == '__main__':
@@ -152,4 +153,4 @@ if __name__ == '__main__':
     read_file(input_lines)
     distances = calc_distances()
     plot_all()
-    # create_file()
+    create_file("test.txt")
