@@ -1,11 +1,15 @@
 # Importing the required modules and classes
 from location import Location
 from request import Request
+from route import Route
 from tool import Tool
+from day import Day
 import numpy as np
 import matplotlib.pyplot as plt
 import tkinter as tk
 from tkinter import filedialog
+
+from vehicle import Vehicle
 
 # Initializing global variables with default values
 DATASET = ""
@@ -17,22 +21,18 @@ DEPOT_COORDINATE = 0
 VEHICLE_COST = 0
 VEHICLE_DAY_COST = 0
 DISTANCE_COST = 0
-PROCESS_ON_FIRST = []
+PROCESS_ON_FIRST = [Day()]
 TOOLS = []
+ALL_TOOLS = []
 LOCATIONS = []
 REQUESTS = []
-VEHICLES = []
+VEHICLES = [Vehicle(0)]
 
 
 # Function to read a tool from a string representation
 def read_tool(tool):
     tid, size, max_no, cost = (int(part) for part in tool.split())
     return Tool(tid, size, max_no, cost)
-
-
-def set_tools_depot():
-    for t in TOOLS:
-        LOCATIONS[0].stored_tools.update({t, t.max_no})
 
 
 # Function to read a coordinate from a string representation
@@ -47,6 +47,7 @@ def read_request(request):
     req = Request(rid, lid, first, last, stay, tid, no_tools)
     PROCESS_ON_FIRST[first].requests.append(req)
     PROCESS_ON_FIRST[first + stay].requests.append(req)
+    VEHICLES.append(Vehicle(rid))
     return req
 
 
@@ -64,15 +65,18 @@ def distance_cost(distance):
     return distance * DISTANCE_COST
 
 
-def createSchedule():
+def create_schedule():
     schedule = list()
+    total_costs = 0
     for day in range(1, DAYS + 1):
-        routes = [day]
-        # for r in REQUESTS:
-        #     if r.first <= day:
-                # if .possible_addition(r.lid):
-
-        return
+        for r in PROCESS_ON_FIRST[day].requests:
+            new_route = Route(day)
+            if new_route.possible_addition(LOCATIONS[r.lid], distances, MAX_TRIP_DISTANCE):
+                new_route.add_visit(r, distances, ALL_TOOLS)
+                new_route.back_to_depot(REQUESTS, distances)
+                PROCESS_ON_FIRST[day].routes.append(new_route)
+                VEHICLES[r.rid].assign_route(new_route)
+                total_costs += new_route.calculate_route_cost(DISTANCE_COST)
 
 
 # Function to plot all coordinates
@@ -93,8 +97,6 @@ def plot_all():
     plt.show()
 
 
-
-
 # Function to read data from a file
 def read_file(txt):
     # Extracting global variables from file
@@ -107,6 +109,9 @@ def read_file(txt):
 
     global DAYS
     DAYS = int(txt[3].split(split)[1])
+
+    for day in range(1, DAYS + 1):
+        PROCESS_ON_FIRST.append(Day())
 
     global CAPACITY
     CAPACITY = int(txt[4].split(split)[1])
@@ -128,12 +133,15 @@ def read_file(txt):
     for i in range(1, no_tools + 1):
         TOOLS.append(read_tool(txt[12 + i]))
 
-    set_tools_depot()
-
     # Reading coordinates from file
     no_coordinates = int(txt[12 + no_tools + 2].split(split)[1])
     for i in range(1, no_coordinates + 1):
         LOCATIONS.append(read_coordinate(txt[12 + no_tools + 2 + i]))
+
+    for t in TOOLS:
+        LOCATIONS[0].stored_tools.update({t: t.max_no})
+        for i in range(1, t.max_no + 1):
+            ALL_TOOLS.append(t)
 
     # Reading requests from file
     no_requests = int(txt[12 + no_tools + no_coordinates + 4].split(split)[1])
@@ -145,12 +153,25 @@ def create_file(filename):
     with open(filename, 'w') as f:
         f.write(f'DATASET = {DATASET}\n')
         f.write(f'NAME = {NAME}\n\n')
-        # f.write(f'MAX_NUMBER_OF_VEHICLES = {len(VEHICLES)}\n')
-        # f.write(f'NUMBER_OF_VEHICLE_DAYS = {}\n')
-        # f.write(f'TOOL_USE = {}\n')
+        f.write(f'MAX_NUMBER_OF_VEHICLES = {len(VEHICLES) - 1}\n')
+
+        vehicle_days = 0
+        for v in VEHICLES:
+            vehicle_days += v.active_days
+
+        f.write(f'NUMBER_OF_VEHICLE_DAYS = {vehicle_days}\n')
+
+        tool_use = [0 for t in range(1, TOOLS[-1].tid + 1)]
+        for t in ALL_TOOLS:
+            if t.used:
+                print(t.tid, len(tool_use))
+                tool_use[t.tid - 1] += 1
+
+        f.write(f'TOOL_USE = {" ".join(map(str, tool_use))}\n')
         # f.write(f'DISTANCE = {}\n')
+
         # f.write(f'COST = {}\n\n')
-        #
+
         # for i in range(1, DAYS+1):
         #     f.write(f'DAY = {i}\n')
         #     f.write(f'NUMBER_OF_VEHICLES = {}\n')
@@ -172,4 +193,5 @@ if __name__ == '__main__':
     read_file(input_lines)
     distances = calc_distances()
     plot_all()
+    create_schedule()
     create_file("test.txt")

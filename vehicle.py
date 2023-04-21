@@ -1,6 +1,3 @@
-from solver import VEHICLE_COST, VEHICLE_DAY_COST, DISTANCE_COST
-
-
 class Vehicle:
     # Initialize an empty vehicle at the depot
     def __init__(self, vid):
@@ -14,8 +11,8 @@ class Vehicle:
         self.active_days += 1
         self.mileage += route.mileage
 
-    def calculate_vehicle_cost(self):
-        return self.active_days * VEHICLE_DAY_COST + VEHICLE_COST  # + mileage * DISTANCE_COST
+    def calculate_vehicle_cost(self, v_d_cost, v_cost):
+        return self.active_days * v_d_cost + v_cost
 
     def reset_load(self):
         self.load = 0

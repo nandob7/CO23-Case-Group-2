@@ -1,3 +1,6 @@
 DATASET = co2020 case challenge part
-NAME = tools over vehicle days over vehicles over distance with 500 requests over 25 days
+NAME = tools over vehicles over vehicle days over distance with 100 requests over 10 days
 
+MAX_NUMBER_OF_VEHICLES = 100
+NUMBER_OF_VEHICLE_DAYS = 200
+TOOL_USE = 30 14 16 28 24
