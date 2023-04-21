@@ -30,6 +30,11 @@ def read_tool(tool):
     return Tool(tid, size, max_no, cost)
 
 
+def set_tools_depot():
+    for t in TOOLS:
+        LOCATIONS[0].stored_tools.update({t, t.max_no})
+
+
 # Function to read a coordinate from a string representation
 def read_coordinate(coordinate):
     i, x, y = (int(part) for part in coordinate.split())
@@ -88,9 +93,6 @@ def plot_all():
     plt.show()
 
 
-def set_tools_depot():
-    for t in TOOLS:
-        LOCATIONS[0].stored_tools.update({t, t.max_no})
 
 
 # Function to read data from a file
@@ -125,6 +127,8 @@ def read_file(txt):
     no_tools = int(txt[12].split(split)[1])
     for i in range(1, no_tools + 1):
         TOOLS.append(read_tool(txt[12 + i]))
+
+    set_tools_depot()
 
     # Reading coordinates from file
     no_coordinates = int(txt[12 + no_tools + 2].split(split)[1])
