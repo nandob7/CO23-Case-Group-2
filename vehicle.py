@@ -15,4 +15,7 @@ class Vehicle:
         self.mileage += route.mileage
 
     def calculate_vehicle_cost(self):
-        return self.active_days * VEHICLE_DAY_COST + VEHICLE_COST # + mileage * DISTANCE_COST
+        return self.active_days * VEHICLE_DAY_COST + VEHICLE_COST  # + mileage * DISTANCE_COST
+
+    def reset_load(self):
+        self.load = 0

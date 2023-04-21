@@ -2,7 +2,8 @@ import math
 
 
 class Location:
-    def __init__(self, x: int, y: int):
+    def __init__(self, i: int, x: int, y: int):
+        self.lid = i
         self.x = x
         self.y = y
         self.stored_tools = {}

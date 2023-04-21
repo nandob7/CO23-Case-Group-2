@@ -17,6 +17,7 @@ DEPOT_COORDINATE = 0
 VEHICLE_COST = 0
 VEHICLE_DAY_COST = 0
 DISTANCE_COST = 0
+PROCESS_ON_FIRST = []
 TOOLS = []
 LOCATIONS = []
 REQUESTS = []
@@ -32,20 +33,23 @@ def read_tool(tool):
 # Function to read a coordinate from a string representation
 def read_coordinate(coordinate):
     i, x, y = (int(part) for part in coordinate.split())
-    return Location(x, y)
+    return Location(i, x, y)
 
 
 # Function to read a request from a string representation
 def read_request(request):
     rid, lid, first, last, stay, tid, no_tools = (int(part) for part in request.split())
-    return Request(rid, lid, first, last, stay, tid, no_tools)
+    req = Request(rid, lid, first, last, stay, tid, no_tools)
+    PROCESS_ON_FIRST[first].requests.append(req)
+    PROCESS_ON_FIRST[first + stay].requests.append(req)
+    return req
 
 
 # Function to calculate the distance between each pair of coordinates
 def calc_distances():
     result = np.empty(shape=(len(LOCATIONS), len(LOCATIONS)))
     for i in range(len(LOCATIONS)):
-        for j in range(i):
+        for j in range(len(LOCATIONS)):
             result[i, j] = LOCATIONS[i].distance(LOCATIONS[j])
     return result
 
@@ -53,6 +57,17 @@ def calc_distances():
 # Function to calculate the cost of a given distance
 def distance_cost(distance):
     return distance * DISTANCE_COST
+
+
+def createSchedule():
+    schedule = list()
+    for day in range(1, DAYS + 1):
+        routes = [day]
+        # for r in REQUESTS:
+        #     if r.first <= day:
+                # if .possible_addition(r.lid):
+
+        return
 
 
 # Function to plot all coordinates
@@ -73,9 +88,9 @@ def plot_all():
     plt.show()
 
 
-def assign_tools():
+def set_tools_depot():
     for t in TOOLS:
-        LOCATIONS[0].add_tool(t)
+        LOCATIONS[0].stored_tools.update({t, t.max_no})
 
 
 # Function to read data from a file
@@ -126,7 +141,7 @@ def create_file(filename):
     with open(filename, 'w') as f:
         f.write(f'DATASET = {DATASET}\n')
         f.write(f'NAME = {NAME}\n\n')
-        # f.write(f'MAX_NUMBER_OF_VEHICLES = {}\n')
+        # f.write(f'MAX_NUMBER_OF_VEHICLES = {len(VEHICLES)}\n')
         # f.write(f'NUMBER_OF_VEHICLE_DAYS = {}\n')
         # f.write(f'TOOL_USE = {}\n')
         # f.write(f'DISTANCE = {}\n')
