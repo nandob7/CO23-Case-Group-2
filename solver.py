@@ -180,9 +180,9 @@ def create_file(filename, total_costs, total_distance):
                 tool_use[t.tid - 1] += 1
 
         f.write(f'TOOL_USE = {" ".join(map(str, tool_use))}\n')
-        f.write(f'DISTANCE = {total_distance}\n')
+        f.write(f'DISTANCE = {int(total_distance)}\n')
 
-        f.write(f'COST = {total_costs}\n\n')
+        f.write(f'COST = {int(total_costs)}\n\n')
 
         for i in range(1,DAYS+1):
             no_vehicles = len(PROCESS_ON_FIRST[i].routes)
