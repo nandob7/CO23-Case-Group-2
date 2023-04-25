@@ -10,6 +10,7 @@ class Vehicle:
     def assign_route(self, route):
         self.active_days += 1
         self.mileage += route.mileage
+        route.vid = self.vid
 
     def calculate_vehicle_cost(self, v_d_cost, v_cost):
         return self.active_days * v_d_cost + v_cost

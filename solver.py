@@ -61,13 +61,23 @@ def calc_distances():
 
 
 # Function to calculate the cost of a given distance
-def distance_cost(distance):
-    return distance * DISTANCE_COST
+def calculate_total_costs(distance_costs):
+    result = distance_costs
+    for v in VEHICLES:
+        if v.active_days > 0:
+            result += VEHICLE_COST + v.active_days * VEHICLE_DAY_COST
+
+    for t in ALL_TOOLS:
+        if t.used:
+            result += t.cost
+
+    return result
 
 
 def create_schedule():
     schedule = list()
     total_costs = 0
+    total_distance = 0
     for day in range(1, DAYS + 1):
         for r in PROCESS_ON_FIRST[day].requests:
             new_route = Route(day)
@@ -76,7 +86,10 @@ def create_schedule():
                 new_route.back_to_depot(REQUESTS, distances)
                 PROCESS_ON_FIRST[day].routes.append(new_route)
                 VEHICLES[r.rid].assign_route(new_route)
+
+                total_distance += new_route.mileage
                 total_costs += new_route.calculate_route_cost(DISTANCE_COST)
+    return total_costs, total_distance
 
 
 # Function to plot all coordinates
@@ -149,7 +162,7 @@ def read_file(txt):
         REQUESTS.append(read_request(txt[12 + no_tools + no_coordinates + 4 + i]))
 
 
-def create_file(filename):
+def create_file(filename, total_costs, total_distance):
     with open(filename, 'w') as f:
         f.write(f'DATASET = {DATASET}\n')
         f.write(f'NAME = {NAME}\n\n')
@@ -164,18 +177,24 @@ def create_file(filename):
         tool_use = [0 for t in range(1, TOOLS[-1].tid + 1)]
         for t in ALL_TOOLS:
             if t.used:
-                print(t.tid, len(tool_use))
                 tool_use[t.tid - 1] += 1
 
         f.write(f'TOOL_USE = {" ".join(map(str, tool_use))}\n')
-        # f.write(f'DISTANCE = {}\n')
+        f.write(f'DISTANCE = {total_distance}\n')
 
-        # f.write(f'COST = {}\n\n')
+        f.write(f'COST = {total_costs}\n\n')
 
-        # for i in range(1, DAYS+1):
-        #     f.write(f'DAY = {i}\n')
-        #     f.write(f'NUMBER_OF_VEHICLES = {}\n')
-        #     f.write(f'{}\n')
+        for i in range(1,DAYS+1):
+            no_vehicles = len(PROCESS_ON_FIRST[i].routes)
+            if no_vehicles > 0:
+                f.write(f'DAY = {i}\n')
+                f.write(f'NUMBER_OF_VEHICLES = {no_vehicles}\n')
+                for r in PROCESS_ON_FIRST[i].routes:
+                    f.write(f'{r.vid} R')
+                    for v in r.visited:
+                        f.write(f' {v}')
+                    f.write('\n')
+                f.write('\n')
 
 
 if __name__ == '__main__':
@@ -193,5 +212,6 @@ if __name__ == '__main__':
     read_file(input_lines)
     distances = calc_distances()
     plot_all()
-    create_schedule()
-    create_file("test.txt")
+    distance_costs, distance = create_schedule()
+    costs = calculate_total_costs(distance_costs)
+    create_file("test.txt", costs, distance)

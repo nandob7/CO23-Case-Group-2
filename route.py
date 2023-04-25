@@ -6,6 +6,7 @@ class Route:
         self.day = day
         self.visited = [0]
         self.mileage = 0
+        self.vid = 0
 
     # Add a visited location and extra mileage to the route
     def add_visit(self, request, distances, tools):
