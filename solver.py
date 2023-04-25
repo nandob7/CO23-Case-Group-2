@@ -26,7 +26,7 @@ TOOLS = []
 ALL_TOOLS = []
 LOCATIONS = []
 REQUESTS = []
-VEHICLES = [Vehicle(0)]
+VEHICLES = []
 
 
 # Function to read a tool from a string representation
@@ -47,7 +47,7 @@ def read_request(request):
     req = Request(rid, lid, first, last, stay, tid, no_tools)
     PROCESS_ON_FIRST[first].requests.append(req)
     PROCESS_ON_FIRST[first + stay].requests.append(req)
-    VEHICLES.append(Vehicle(len(VEHICLES))) #VEHICLES.append(Vehicle(rid))
+    VEHICLES.append(Vehicle(len(VEHICLES) + 1))  # VEHICLES.append(Vehicle(rid))
     return req
 
 
@@ -81,14 +81,22 @@ def create_schedule():
     for day in range(1, DAYS + 1):
         for r in PROCESS_ON_FIRST[day].requests:
             new_route = Route(day)
-            if new_route.possible_addition(LOCATIONS[r.lid], distances, MAX_TRIP_DISTANCE):
-                new_route.add_visit(r, distances, ALL_TOOLS)
+            if new_route.possible_addition(LOCATIONS[r.lid], distances, MAX_TRIP_DISTANCE, LOCATIONS, r):
+                new_route.add_visit(r, distances, ALL_TOOLS, LOCATIONS)
                 new_route.back_to_depot(REQUESTS, distances)
                 PROCESS_ON_FIRST[day].routes.append(new_route)
-                VEHICLES[r.rid].assign_route(new_route)
+                for v in VEHICLES:
+                    if v.active == 0:
+                        v.assign_route(new_route)
+                        break
+            else:
+                print(r.rid)
 
-                total_distance += new_route.mileage
-                total_costs += new_route.calculate_route_cost(DISTANCE_COST)
+            total_distance += new_route.mileage
+            total_costs += new_route.calculate_route_cost(DISTANCE_COST)
+
+        for v in VEHICLES:
+            v.active = 0
     return total_costs, total_distance
 
 
@@ -152,9 +160,14 @@ def read_file(txt):
         LOCATIONS.append(read_coordinate(txt[12 + no_tools + 2 + i]))
 
     for t in TOOLS:
-        LOCATIONS[0].stored_tools.update({t: t.max_no})
+        LOCATIONS[0].stored_tools.update({t.tid: t.max_no})
         for i in range(1, t.max_no + 1):
             ALL_TOOLS.append(t)
+
+    # init empty dictionaries for each location
+    for l in LOCATIONS[1:]:
+        for t in TOOLS:
+            l.stored_tools.update({t.tid: 0})
 
     # Reading requests from file
     no_requests = int(txt[12 + no_tools + no_coordinates + 4].split(split)[1])
@@ -166,7 +179,12 @@ def create_file(filename, total_costs, total_distance):
     with open(filename, 'w') as f:
         f.write(f'DATASET = {DATASET}\n')
         f.write(f'NAME = {NAME}\n\n')
-        f.write(f'MAX_NUMBER_OF_VEHICLES = {len(VEHICLES) - 1}\n')
+
+        max_vehicles = 0
+        for d in PROCESS_ON_FIRST:
+            if len(d.routes) > max_vehicles:
+                max_vehicles = len(d.routes)
+        f.write(f'MAX_NUMBER_OF_VEHICLES = {max_vehicles}\n')
 
         vehicle_days = 0
         for v in VEHICLES:
@@ -174,7 +192,7 @@ def create_file(filename, total_costs, total_distance):
 
         f.write(f'NUMBER_OF_VEHICLE_DAYS = {vehicle_days}\n')
 
-        tool_use = [0 for t in range(1, TOOLS[-1].tid + 1)]
+        tool_use = [0 for i in range(1, TOOLS[-1].tid + 1)]
         for t in ALL_TOOLS:
             if t.used:
                 tool_use[t.tid - 1] += 1
@@ -184,7 +202,7 @@ def create_file(filename, total_costs, total_distance):
 
         f.write(f'COST = {int(total_costs)}\n\n')
 
-        for i in range(1,DAYS+1):
+        for i in range(1, DAYS + 1):
             no_vehicles = len(PROCESS_ON_FIRST[i].routes)
             if no_vehicles > 0:
                 f.write(f'DAY = {i}\n')
@@ -208,7 +226,6 @@ if __name__ == '__main__':
     # Read the contents of the file into a list of strings
     with open(file_path, 'r') as file:
         input_lines = [line.strip() for line in file]
-
 
     read_file(input_lines)
     distances = calc_distances()

@@ -9,9 +9,11 @@ class Route:
         self.vid = 0
 
     # Add a visited location and extra mileage to the route
-    def add_visit(self, request, distances, tools):
+    def add_visit(self, request, distances, tools, locations):
         self.mileage += distances[request.lid, self.visited[-1]]
         if request.first == self.day:
+            locations[0].remove_tool(request.tid, request.no_tools)
+            locations[request.lid].add_tool(request.tid, request.no_tools)
             self.visited.append(request.rid)
             for i in range(request.no_tools):
                 for t in tools:
@@ -20,6 +22,8 @@ class Route:
                         t.used = True
                         t.lid = request.lid
         else:
+            locations[request.lid].remove_tool(request.tid, request.no_tools)
+            locations[0].add_tool(request.tid, request.no_tools)
             self.visited.append(-request.rid)
             for i in range(request.no_tools):
                 for t in tools:
@@ -34,6 +38,9 @@ class Route:
     def calculate_route_cost(self, d_cost):
         return self.mileage * d_cost
 
-    def possible_addition(self, location, distances, max_dist):
+    def possible_addition(self, location, distances, max_dist, locations, request):
+        pickup = True
+        if request.first == self.day:
+            pickup = locations[0].stored_tools.get(request.tid) >= request.no_tools
         return self.mileage + distances[self.visited[-1], location.lid] + distances[location.lid, 0] \
-            <= max_dist
+            <= max_dist and pickup
