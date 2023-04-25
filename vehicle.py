@@ -3,11 +3,13 @@ class Vehicle:
     def __init__(self, vid):
         self.vid = vid
         self.load = 0
+        self.active = 0
         self.mileage = 0
         self.active_days = 0
         self.cost = 0
 
     def assign_route(self, route):
+        self.active = 1
         self.active_days += 1
         self.mileage += route.mileage
         route.vid = self.vid

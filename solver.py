@@ -47,7 +47,7 @@ def read_request(request):
     req = Request(rid, lid, first, last, stay, tid, no_tools)
     PROCESS_ON_FIRST[first].requests.append(req)
     PROCESS_ON_FIRST[first + stay].requests.append(req)
-    VEHICLES.append(Vehicle(rid))
+    VEHICLES.append(Vehicle(len(VEHICLES))) #VEHICLES.append(Vehicle(rid))
     return req
 
 
@@ -208,6 +208,7 @@ if __name__ == '__main__':
     # Read the contents of the file into a list of strings
     with open(file_path, 'r') as file:
         input_lines = [line.strip() for line in file]
+
 
     read_file(input_lines)
     distances = calc_distances()
