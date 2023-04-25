@@ -51,7 +51,7 @@ def read_request(request):
     return req
 
 
-# Function to calculate the distance between each pair of coordinates
+# Function to create a distance matrix calculating the distances between pairs of coordinates
 def calc_distances():
     result = np.empty(shape=(len(LOCATIONS), len(LOCATIONS)))
     for i in range(len(LOCATIONS)):
@@ -60,7 +60,7 @@ def calc_distances():
     return result
 
 
-# Function to calculate the cost of a given distance
+# Function to calculate the total costs given a value of distance costs
 def calculate_total_costs(distance_costs):
     result = distance_costs
     for v in VEHICLES:
@@ -74,29 +74,49 @@ def calculate_total_costs(distance_costs):
     return result
 
 
+# Function that creates the schedule and returns the distance costs and total distance
 def create_schedule():
     schedule = list()
+
+    # Init return values
     total_costs = 0
     total_distance = 0
+
+    # Loop over all Day Objects to create routes
     for day in range(1, DAYS + 1):
+        # Loop over all requests set for the day (PROCESS_ON_FIRST is array met Day objects met de
+        # requests per dag als ze op de eerst mogelijke dag verwerkt worden.) E.g. Day 1 alle requests die
+        # op Day 1 al gedaan kunnen worden
         for r in PROCESS_ON_FIRST[day].requests:
             new_route = Route(day)
+            vid = 0
+
+            # Possible addition checks if there is enough stock in depot
+            # and if location of request is within max distance (trip back to depot included)
             if new_route.possible_addition(LOCATIONS[r.lid], distances, MAX_TRIP_DISTANCE, LOCATIONS, r):
                 new_route.add_visit(r, distances, ALL_TOOLS, LOCATIONS)
+                # Gelijk terug naar depot voor simpel begin
                 new_route.back_to_depot(REQUESTS, distances)
                 PROCESS_ON_FIRST[day].routes.append(new_route)
+
+                # Loop over all vehicles and assigns the route to the first available then breaks.
                 for v in VEHICLES:
                     if v.active == 0:
+                        vid = v.vid
                         v.assign_route(new_route)
                         break
+
+            # If not possible prints Request id of id that cannot be processed on scheduled day
+            # (moeten we nog fixen dat het op een andere dag wel gedaan wordt)
             else:
                 print(r.rid)
 
+            # Add route distance and costs to totals
             total_distance += new_route.mileage
             total_costs += new_route.calculate_route_cost(DISTANCE_COST)
 
-        for v in VEHICLES:
-            v.active = 0
+            # Reset vehicle
+            VEHICLES[vid].active = 0
     return total_costs, total_distance
 
 
