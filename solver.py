@@ -115,9 +115,9 @@ def create_schedule():
             total_distance += new_route.mileage
             total_costs += new_route.calculate_route_cost(DISTANCE_COST)
 
-    # Reset vehicle
-    for v in VEHICLES:
-        v.active = 0
+        # Reset vehicle
+        for v in VEHICLES:
+            v.active = 0
     return total_costs, total_distance
 
 
