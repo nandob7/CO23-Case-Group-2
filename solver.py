@@ -21,7 +21,7 @@ DEPOT_COORDINATE = 0
 VEHICLE_COST = 0
 VEHICLE_DAY_COST = 0
 DISTANCE_COST = 0
-PROCESS_ON_FIRST = [Day()]
+SCHEDULE = []
 TOOLS = []
 ALL_TOOLS = []
 LOCATIONS = []
@@ -45,19 +45,24 @@ def read_coordinate(coordinate):
 def read_request(request):
     rid, lid, first, last, stay, tid, no_tools = (int(part) for part in request.split())
     req = Request(rid, lid, first, last, stay, tid, no_tools)
-    PROCESS_ON_FIRST[first].requests.append(req)
-    PROCESS_ON_FIRST[first + stay].requests.append(req)
+    # PROCESS_ON_FIRST[first].requests.append(req)
+    # PROCESS_ON_FIRST[first + stay].requests.append(req)
     VEHICLES.append(Vehicle(len(VEHICLES) + 1))  # VEHICLES.append(Vehicle(rid))
     return req
 
 
 # Function to create a distance matrix calculating the distances between pairs of coordinates
 def calc_distances():
+    max_dist_depot = 0
     result = np.empty(shape=(len(LOCATIONS), len(LOCATIONS)))
     for i in range(len(LOCATIONS)):
         for j in range(len(LOCATIONS)):
-            result[i, j] = LOCATIONS[i].distance(LOCATIONS[j])
-    return result
+            dist = LOCATIONS[i].distance(LOCATIONS[j])
+            result[i, j] = dist
+
+            if (i == 0 or j == 0) and dist > max_dist_depot:
+                max_dist_depot = dist
+    return result, max_dist_depot
 
 
 # Function to calculate the total costs given a value of distance costs
@@ -87,7 +92,7 @@ def create_schedule():
         # Loop over all requests set for the day (PROCESS_ON_FIRST is array met Day objects met de
         # requests per dag als ze op de eerst mogelijke dag verwerkt worden.) E.g. Day 1 alle requests die
         # op Day 1 al gedaan kunnen worden
-        for r in PROCESS_ON_FIRST[day].requests:
+        for r in SCHEDULE[day - 1].requests:
             new_route = Route(day)
             vid = 0
 
@@ -97,7 +102,7 @@ def create_schedule():
                 new_route.add_visit(r, distances, ALL_TOOLS, LOCATIONS)
                 # Gelijk terug naar depot voor simpel begin
                 new_route.back_to_depot(REQUESTS, distances)
-                PROCESS_ON_FIRST[day].routes.append(new_route)
+                SCHEDULE[day].routes.append(new_route)
 
                 # Loop over all vehicles and assigns the route to the first available then breaks.
                 for v in VEHICLES:
@@ -153,7 +158,7 @@ def read_file(txt):
     DAYS = int(txt[3].split(split)[1])
 
     for day in range(1, DAYS + 1):
-        PROCESS_ON_FIRST.append(Day())
+        SCHEDULE.append(Day())
 
     global CAPACITY
     CAPACITY = int(txt[4].split(split)[1])
@@ -202,7 +207,7 @@ def create_file(filename, total_costs, total_distance):
         f.write(f'NAME = {NAME}\n\n')
 
         max_vehicles = 0
-        for d in PROCESS_ON_FIRST:
+        for d in SCHEDULE:
             if len(d.routes) > max_vehicles:
                 max_vehicles = len(d.routes)
         f.write(f'MAX_NUMBER_OF_VEHICLES = {max_vehicles}\n')
@@ -224,16 +229,46 @@ def create_file(filename, total_costs, total_distance):
         f.write(f'COST = {int(total_costs)}\n\n')
 
         for i in range(1, DAYS + 1):
-            no_vehicles = len(PROCESS_ON_FIRST[i].routes)
+            no_vehicles = len(SCHEDULE[i - 1].routes)
             if no_vehicles > 0:
                 f.write(f'DAY = {i}\n')
                 f.write(f'NUMBER_OF_VEHICLES = {no_vehicles}\n')
-                for r in PROCESS_ON_FIRST[i].routes:
+                for r in SCHEDULE[i - 1].routes:
                     f.write(f'{r.vid} R')
                     for v in r.visited:
                         f.write(f' {v}')
                     f.write('\n')
                 f.write('\n')
+
+
+def request_prios(distances, max_dist_depot):
+    max_twindows = list(0 for r in TOOLS)
+    max_stays = list(0 for r in TOOLS)
+    for r in REQUESTS:
+        if r.twindow > max_twindows[r.tid - 1]:
+            max_twindows[r.tid - 1] = r.twindow
+        if r.stay > max_stays[r.tid - 1]:
+            max_stays[r.tid - 1] = r.stay
+
+    for r in REQUESTS:
+        r.priority_calc(max_twindows, max_stays, TOOLS, distances, max_dist_depot)
+
+    return sorted(REQUESTS, key=lambda r: r.priority, reverse=True)
+
+
+def find_opt_day(request):
+    best = None
+    min_cost = int('inf')
+    available_days = range(request.first, request.last + 1)
+
+    for day in available_days:
+        day_cost = SCHEDULE[day].cost
+        added_cost = SCHEDULE[day].calc_cost(request) - day_cost
+        if added_cost < min_cost:
+            min_cost = added_cost
+            best = day
+
+    return best, min_cost
 
 
 if __name__ == '__main__':
@@ -249,8 +284,12 @@ if __name__ == '__main__':
         input_lines = [line.strip() for line in file]
 
     read_file(input_lines)
-    distances = calc_distances()
+    distances, max_dist_depot = calc_distances()
     plot_all()
     distance_costs, distance = create_schedule()
     costs = calculate_total_costs(distance_costs)
     create_file("test.txt", costs, distance)
+    priorities = request_prios(distances, max_dist_depot)
+
+    for p in priorities:
+        print(p.rid)
