@@ -5,6 +5,7 @@ class Day:
         self.depot_tools = list()
         self.cost = 0
 
+    # AANPASSEN
     def calc_costs(self, v_d_cost):
         distance_cost = 0
         for r in self.routes:
