@@ -195,10 +195,9 @@ def cost_if_added(day, request, route, t_use=None, v_use=0):
     t_cost = 0
     if t_use is not None and day.depot_tools.get(request.tid) - request.no_tools \
             < t_use.get(request.tid):
-        t_cost += (t_use.get(request.tid) - day.depot_tools.get(request.tid)
-                   - request.no_tools) * TOOLS[request.tid - 1].cost
+        t_cost += (t_use.get(request.tid) - (day.depot_tools.get(request.tid)
+                   - request.no_tools)) * TOOLS[request.tid - 1].cost
 
-    print(t_cost)
     return travel_costs + v_cost + t_cost
 
 
