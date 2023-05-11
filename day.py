@@ -2,12 +2,23 @@ class Day:
     def __init__(self):
         self.requests = []
         self.routes = []
-        self.depot_tools = list()
-        self.cost = 0
+        self.depot_tools = dict()
+        self.mileage = 0
 
     # AANPASSEN
-    def calc_costs(self, v_d_cost):
-        distance_cost = 0
+    def calc_mileage(self):
         for r in self.routes:
-            distance_cost += r.calculate_route_cost()
-        self.cost = len(self.routes) * v_d_cost + distance_cost
+            self.mileage += r.mileage
+
+        return self.mileage
+
+    def schedule(self, request, route):
+        self.requests.append(request)
+        self.routes.append(route)
+        self.depot_tools[request.tid] -= request.no_tools if request.pickup is None else - request.no_tools
+
+    def unschedule(self, request):
+        self.requests.pop()
+        self.routes.pop()
+        self.depot_tools[request.tid] += request.no_tools if request.pickup is None else -request.no_tools
+
