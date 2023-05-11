@@ -344,8 +344,8 @@ def create_file(filename, total_costs, total_distance):
 
         tool_use = [0 for t in TOOLS]
         for t in TOOLS:
-            if t.used:
-                tool_use[t.tid - 1] += t.used
+            if t.used > 0:
+                tool_use[t.tid - 1] = t.used
 
         f.write(f'TOOL_USE = {" ".join(map(str, tool_use))}\n')
         f.write(f'DISTANCE = {int(total_distance)}\n')
@@ -389,4 +389,4 @@ if __name__ == '__main__':
 
     # Creating the output
     costs, total_dist = final_costs_distance()
-    create_file("test.txt", costs, total_dist)
+    create_file("test_output.txt", costs, total_dist)
