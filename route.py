@@ -9,26 +9,23 @@ class Route:
         self.vid = 0
 
     # Add a visited location and extra mileage to the route
-    def add_visit(self, request, distances):
+    def add_visit(self, request, distances, tools, day):
         self.mileage += distances[request.lid, self.visited[-1]]
 
         if request.pickup is None:
             self.visited.append(request.rid)
 
-            # for i in range(request.no_tools):
-            #     for t in tools:
-            #         if t.tid == request.tid and not t.in_use:
-            #             t.in_use = True
-            #             t.used = True
-            #             t.lid = request.lid
+            for i in range(request.no_tools):
+                for t in tools:
+                    for d in range(day, day + request.stay + 1):
+                        if t.tid == request.tid and t.in_use[d-1] == 1:
+                            break
+                    for d in range(day, day + request.stay):
+                        print(d)
+                        t.in_use[d - 1] = 1
+                        t.used = True
         else:
             self.visited.append(-request.rid)
-
-            # for i in range(request.no_tools):
-            #     for t in tools:
-            #         if t.lid == request.lid and t.in_use:
-            #             t.in_use = False
-            #             t.lid = 0
 
     def back_to_depot(self, reqs, distances):
         self.mileage += distances[reqs[abs(self.visited[-1]) - 1].lid, 0]

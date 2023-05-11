@@ -23,6 +23,7 @@ VEHICLE_DAY_COST = 0
 DISTANCE_COST = 0
 SCHEDULE = []
 TOOLS = []
+ALL_TOOLS = []
 LOCATIONS = []
 REQUESTS = []
 VEHICLES = []
@@ -73,6 +74,9 @@ def read_file(txt):
     for t in TOOLS:
         for d in SCHEDULE:
             d.depot_tools.update({t.tid: t.max_no})
+
+        for i in range(t.max_no):
+            ALL_TOOLS.append(t.copy(DAYS))
 
     # Reading requests from file
     no_requests = int(txt[12 + no_tools + no_coordinates + 4].split(split)[1])
@@ -228,14 +232,14 @@ def find_opt_day(request, available_days):
         # Checks if the request is possible to schedule on the day considering constraints
         if delivery.possible_addition(request, DISTANCES, MAX_TRIP_DISTANCE,
                                       SCHEDULE, day):
-            delivery.add_visit(request, DISTANCES)
+            delivery.add_visit(request, DISTANCES, ALL_TOOLS, day)
             # Gelijk terug naar depot voor simpel begin
             delivery.back_to_depot(REQUESTS, DISTANCES)
             old_d_cost = SCHEDULE[day - 1].mileage * DISTANCE_COST + \
                          len(SCHEDULE[day - 1].routes) * VEHICLE_DAY_COST
             added_cost = cost_if_added(SCHEDULE[day - 1], request, delivery,
                                        min_available_tools()) - old_d_cost
-            pickup.add_visit(request, DISTANCES)
+            pickup.add_visit(request, DISTANCES, ALL_TOOLS, end)
             # Gelijk terug naar depot voor simpel begin
             pickup.back_to_depot(REQUESTS, DISTANCES)
             old_p_cost = SCHEDULE[end - 1].mileage * DISTANCE_COST + \
@@ -253,7 +257,7 @@ def find_opt_day(request, available_days):
 def schedule_request(day, request):
     is_delivery = request.pickup is None
     new_route = Route(day)
-    new_route.add_visit(request, DISTANCES)
+    new_route.add_visit(request, DISTANCES, ALL_TOOLS, day)
     new_route.back_to_depot(REQUESTS, DISTANCES)
 
     SCHEDULE[day - 1].schedule(request, new_route)
