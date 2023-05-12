@@ -1,6 +1,7 @@
 class Tool:
     def __init__(self, tid, size, max_no, cost, days):
         self.tid = tid
+        self.id = 0
         self.size = size
         self.used = False
         self.in_use = [0 for i in range(days)]

@@ -12,6 +12,7 @@ class Request:
         self.pickup = None
         self.priority = 0
         self.vid = [0, 0]
+        self.tools = []
         self.twindow = list(range(self.first, self.last + 1))
 
     def deliver(self, day):

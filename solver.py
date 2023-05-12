@@ -76,8 +76,10 @@ def read_file(txt):
         for d in SCHEDULE:
             d.depot_tools.update({t.tid: t.max_no})
 
-        for i in range(t.max_no):
-            ALL_TOOLS.append(copy.deepcopy(t))
+        for i in range(1, t.max_no + 1):
+            tool = copy.deepcopy(t)
+            tool.id = i
+            ALL_TOOLS.append(tool)
 
     # Reading requests from file
     no_requests = int(txt[12 + no_tools + no_coordinates + 4].split(split)[1])
@@ -288,6 +290,9 @@ def unschedule_request(day, request):
     SCHEDULE[request.pickup - 1].unschedule(request)
     SCHEDULE[day - 1].unschedule(request)
 
+    for t in request.tools:
+        for d in range(day, request.pickup+1):
+            t.in_use[d - 1] = 0
     request.pickup = None
 
 
@@ -311,15 +316,19 @@ def plan_requests(requests):
         unschedule_request(best_day, r)
         r.twindow.remove(best_day)
 
-    # Time windows gaan naar 0 en daarom kan hij nog geen ander schedule
-    # vinden na backtracken vgm")
-    if r.pickup is not None:
-        day = r.pickup - r.stay
-        unschedule_request(day, r)
-        r.twindow.remove(day)
-
         if plan_requests(requests):
             return True
+
+    # Time windows gaan naar 0 en daarom kan hij nog geen ander schedule
+    # vinden na backtracken vgm")
+    # if r.pickup is not None:
+    #     print("test")
+    #     day = r.pickup - r.stay
+    #     unschedule_request(day, r)
+    #     r.twindow.remove(day)
+    #
+    #     if plan_requests(requests):
+    #         return True
 
     return False
 
@@ -380,12 +389,15 @@ if __name__ == '__main__':
     # Processing input
     read_file(input_lines)
     DISTANCES, max_dist_depot = calc_distances()
-    plot_all()
+    # plot_all()
     # distance_costs, distance = create_schedule()
 
     # Creating the schedule
     priorities = request_prios(max_dist_depot)
     plan_requests(priorities)
+
+    # for r in priorities:
+    #     print(r.rid, r.tid, r.no_tools, r.first, r.last, r.stay)
 
     # Creating the output
     costs, total_dist = final_costs_distance()

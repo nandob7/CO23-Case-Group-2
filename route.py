@@ -19,19 +19,25 @@ class Route:
             available_tools = []
             for t in req_tools:
                 available = 0
-                for d in range(day, day + request.stay):
+                for d in range(day, day + request.stay + 1):
                     if t.in_use[d - 1] == 0:
                         available += 1
-                if available == len(range(day, day + request.stay)):
+                if available == len(range(day, day + request.stay + 1)):
                     available_tools.append(t)
 
             if plan:
                 for i in range(request.no_tools):
-                    for d in range(day, day + request.stay):
+                    for d in range(day, day + request.stay+1):
                         available_tools[i].in_use[d - 1] = 1
                         available_tools[i].used = True
+                        request.tools.append(available_tools[i])
+
+                print(request.rid, request.stay, available_tools[0].in_use)
         else:
             self.visited.append(-request.rid)
+            if plan:
+                request.tools.clear()
+
 
     def back_to_depot(self, reqs, distances):
         self.mileage += distances[reqs[abs(self.visited[-1]) - 1].lid, 0]
@@ -43,10 +49,10 @@ class Route:
         count = 0
         for t in req_tools:
             available = 0
-            for d in range(day, day + request.stay):
+            for d in range(day, day + request.stay + 1):
                 if t.in_use[d - 1] == 0:
                     available += 1
-            if available == len(range(day, day + request.stay)):
+            if available == len(range(day, day + request.stay + 1)):
                 count += 1
 
         pickup = count >= request.no_tools
