@@ -9,21 +9,27 @@ class Route:
         self.vid = 0
 
     # Add a visited location and extra mileage to the route
-    def add_visit(self, request, distances, tools, day):
+    def add_visit(self, request, distances, tools, day, is_pickup, plan):
         self.mileage += distances[request.lid, self.visited[-1]]
+        req_tools = [t for t in tools if t.tid == request.tid]
 
-        if request.pickup is None:
+        if not is_pickup:
             self.visited.append(request.rid)
 
-            for i in range(request.no_tools):
-                for t in tools:
-                    for d in range(day, day + request.stay + 1):
-                        if t.tid == request.tid and t.in_use[d-1] == 1:
-                            break
+            available_tools = []
+            for t in req_tools:
+                available = 0
+                for d in range(day, day + request.stay):
+                    if t.in_use[d - 1] == 0:
+                        available += 1
+                if available == len(range(day, day + request.stay)):
+                    available_tools.append(t)
+
+            if plan:
+                for i in range(request.no_tools):
                     for d in range(day, day + request.stay):
-                        print(d)
-                        t.in_use[d - 1] = 1
-                        t.used = True
+                        available_tools[i].in_use[d - 1] = 1
+                        available_tools[i].used = True
         else:
             self.visited.append(-request.rid)
 
@@ -31,11 +37,19 @@ class Route:
         self.mileage += distances[reqs[abs(self.visited[-1]) - 1].lid, 0]
         self.visited.append(0)
 
-    def possible_addition(self, request, distances, max_dist, days, day):
-        pickup = True
-        if request.pickup is None:
-            for d in range(day, day + request.stay + 1):
-                if days[d - 1].depot_tools.get(request.tid) < request.no_tools:
-                    return False
+    def possible_addition(self, request, distances, max_dist, day, tools):
+        req_tools = [t for t in tools if t.tid == request.tid]
+
+        count = 0
+        for t in req_tools:
+            available = 0
+            for d in range(day, day + request.stay):
+                if t.in_use[d - 1] == 0:
+                    available += 1
+            if available == len(range(day, day + request.stay)):
+                count += 1
+
+        pickup = count >= request.no_tools
+
         return self.mileage + distances[self.visited[-1], request.lid] + distances[request.lid, 0] \
             <= max_dist and pickup

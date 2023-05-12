@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tkinter as tk
 from tkinter import filedialog
+import copy
 
 from vehicle import Vehicle
 
@@ -76,7 +77,7 @@ def read_file(txt):
             d.depot_tools.update({t.tid: t.max_no})
 
         for i in range(t.max_no):
-            ALL_TOOLS.append(t.copy(DAYS))
+            ALL_TOOLS.append(copy.deepcopy(t))
 
     # Reading requests from file
     no_requests = int(txt[12 + no_tools + no_coordinates + 4].split(split)[1])
@@ -105,7 +106,7 @@ def plot_all():
 # Function to read a tool from a string representation
 def read_tool(tool):
     tid, size, max_no, cost = (int(part) for part in tool.split())
-    return Tool(tid, size, max_no, cost)
+    return Tool(tid, size, max_no, cost, DAYS)
 
 
 # Function to read a coordinate from a string representation
@@ -154,14 +155,10 @@ def final_costs_distance():
         if len(d.routes) > max_v:
             max_v = len(d.routes)
 
-        for t in TOOLS:
-            if d.depot_tools.get(t.tid) < min_dep_t.get(t.tid):
-                min_dep_t[t.tid] = d.depot_tools.get(t.tid)
-
     tool_cost = 0
-    for t in TOOLS:
-        t.used = t.max_no - min_dep_t.get(t.tid)
-        tool_cost += t.cost * (t.max_no - min_dep_t.get(t.tid))
+    for t in ALL_TOOLS:
+        if t.used:
+            tool_cost += t.cost
 
     tot_costs = v_days * VEHICLE_DAY_COST + max_v * VEHICLE_COST + tool_cost
 
@@ -200,7 +197,7 @@ def cost_if_added(day, request, route, t_use=None, v_use=0):
     if t_use is not None and day.depot_tools.get(request.tid) - request.no_tools \
             < t_use.get(request.tid):
         t_cost += (t_use.get(request.tid) - (day.depot_tools.get(request.tid)
-                   - request.no_tools)) * TOOLS[request.tid - 1].cost
+                                             - request.no_tools)) * TOOLS[request.tid - 1].cost
 
     return travel_costs + v_cost + t_cost
 
@@ -230,16 +227,15 @@ def find_opt_day(request, available_days):
         pickup = Route(end)
 
         # Checks if the request is possible to schedule on the day considering constraints
-        if delivery.possible_addition(request, DISTANCES, MAX_TRIP_DISTANCE,
-                                      SCHEDULE, day):
-            delivery.add_visit(request, DISTANCES, ALL_TOOLS, day)
+        if delivery.possible_addition(request, DISTANCES, MAX_TRIP_DISTANCE, day, ALL_TOOLS):
+            delivery.add_visit(request, DISTANCES, ALL_TOOLS, day, is_pickup=False, plan=False)
             # Gelijk terug naar depot voor simpel begin
             delivery.back_to_depot(REQUESTS, DISTANCES)
             old_d_cost = SCHEDULE[day - 1].mileage * DISTANCE_COST + \
                          len(SCHEDULE[day - 1].routes) * VEHICLE_DAY_COST
             added_cost = cost_if_added(SCHEDULE[day - 1], request, delivery,
                                        min_available_tools()) - old_d_cost
-            pickup.add_visit(request, DISTANCES, ALL_TOOLS, end)
+            pickup.add_visit(request, DISTANCES, ALL_TOOLS, end, is_pickup=True, plan=False)
             # Gelijk terug naar depot voor simpel begin
             pickup.back_to_depot(REQUESTS, DISTANCES)
             old_p_cost = SCHEDULE[end - 1].mileage * DISTANCE_COST + \
@@ -257,7 +253,7 @@ def find_opt_day(request, available_days):
 def schedule_request(day, request):
     is_delivery = request.pickup is None
     new_route = Route(day)
-    new_route.add_visit(request, DISTANCES, ALL_TOOLS, day)
+    new_route.add_visit(request, DISTANCES, ALL_TOOLS, day, not is_delivery, plan=True)
     new_route.back_to_depot(REQUESTS, DISTANCES)
 
     SCHEDULE[day - 1].schedule(request, new_route)
@@ -265,8 +261,8 @@ def schedule_request(day, request):
     # Updates request status and tools use on the day and duration of stay
     if is_delivery:
         request.deliver(day)
-        for d in range(request.stay):
-            SCHEDULE[day + d].depot_tools[request.tid] -= request.no_tools
+        # for d in range(request.stay):
+        #     SCHEDULE[day + d].depot_tools[request.tid] -= request.no_tools
 
     # Loop over all vehicles and assigns the route to the first available then breaks.
     for v in VEHICLES:
@@ -296,7 +292,7 @@ def unschedule_request(day, request):
 
 
 # Recursive function that loops over all days and tries to schedule the given requests in
-# order on the best day and
+# order on the best day
 def plan_requests(requests):
     if not requests:
         return True
@@ -316,7 +312,7 @@ def plan_requests(requests):
         r.twindow.remove(best_day)
 
     # Time windows gaan naar 0 en daarom kan hij nog geen ander schedule
-    # vinden na backtracken vgm
+    # vinden na backtracken vgm")
     if r.pickup is not None:
         day = r.pickup - r.stay
         unschedule_request(day, r)
@@ -347,9 +343,9 @@ def create_file(filename, total_costs, total_distance):
         f.write(f'NUMBER_OF_VEHICLE_DAYS = {vehicle_days}\n')
 
         tool_use = [0 for t in TOOLS]
-        for t in TOOLS:
-            if t.used > 0:
-                tool_use[t.tid - 1] = t.used
+        for t in ALL_TOOLS:
+            if t.used:
+                tool_use[t.tid - 1] += 1
 
         f.write(f'TOOL_USE = {" ".join(map(str, tool_use))}\n')
         f.write(f'DISTANCE = {int(total_distance)}\n')
