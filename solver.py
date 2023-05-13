@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tkinter as tk
 from tkinter import filedialog
+from gurobipy import *
 import copy
 
 from vehicle import Vehicle
@@ -375,6 +376,68 @@ def schedule_requests_recursive(requests, tools):
     return False  # No feasible assignment found for the current job
 
 
+def schedule_requests_ILP(requests, tools):
+    # Create a new model
+    m = Model("scheduling")
+
+    # Create variables
+    x = {}
+    for r in requests:
+        for t in tools:
+            for day in range(1, DAYS + 1):
+                x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"x_{r.rid}_{t.tid}_{t.id}_{day}")
+
+    # Set objective: minimize the maximum lateness
+    max_lateness = m.addVar(vtype=GRB.CONTINUOUS, name="max_lateness")
+    m.addConstr(max_lateness >= 0, "max_lateness_positive")
+    m.setObjective(max_lateness, GRB.MINIMIZE)
+
+    # Add constraints
+    for r in requests:
+        # Each job must be processed exactly the amount of times as requested
+        m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(1, DAYS + 1)) == r.units)
+
+        # The maximum lateness must be greater than or equal to the lateness of each job
+        m.addConstr(max_lateness >= quicksum(
+            (day + r.stay - r.last) * x[(r, t, day)] for t in tools for day in range(1, DAYS + 1)))
+
+    for t in tools:
+        for day in range(1, DAYS + 1):
+            # Each machine can start at most one job per day
+            m.addConstr(quicksum(x[(r, t, day)] for r in requests) <= 1)
+
+    for r in requests:
+        for t in tools:
+            for day in range(1, DAYS + 1):
+                # If a job starts on a machine on a specific day, no other job can start on the same machine during
+                # its processing time
+                m.addConstr(
+                    quicksum(x[(r, t, d)] for d in range(day, min(day + r.stay, DAYS) + 1) for r in requests) <= 1)
+
+    for r in requests:
+        for t in tools:
+            for day in range(1, DAYS - r.stay + 2):  # Adjusted range
+                # If a job starts on a day, it should continue for the next `stay` days on the same machine
+                m.addConstr(quicksum(x[(r, t, d)] for d in range(day, day + r.stay)) >= r.stay * x[(r, t, day)])
+
+                # If a job is running, it can't be disturbed by another job on the same machine
+                for r_other in requests:
+                    if r_other != r:
+                        m.addConstr(
+                            quicksum(x[(r_other, t, d)] for d in range(day, min(day + r.stay, DAYS) + 1)) <= 1 - x[
+                                (r, t, day)])
+
+    # Optimize model
+    m.optimize()
+
+    # Print the optimal schedule
+    for v in m.getVars():
+        if v.x > 0.5:
+            print(f"{v.varName}: {v.x}")
+
+    print(f"Max lateness: {max_lateness.x}")
+
+
 # Function that creates the output file
 def create_file(filename, total_costs, total_distance):
     with open(filename, 'w') as f:
@@ -434,15 +497,17 @@ if __name__ == '__main__':
     # plot_all()
     # distance_costs, distance = create_schedule()
 
-    # Creating the schedule
-    priorities = request_prios()
+    # # Creating the schedule
+    # priorities = request_prios()
     for t in TOOLS:
         req_lst = [r for r in REQUESTS if r.tid == t.tid]
         tool_lst = [tool for tool in ALL_TOOLS if t.tid == tool.tid]
-        schedule_requests(req_lst, tool_lst)
+        # schedule_requests(req_lst, tool_lst)
+        schedule_requests_ILP(req_lst, tool_lst)
 
-    for r in REQUESTS:
-        print(r.rid, r.start, r.complete)
+    # for r in REQUESTS:
+    #     print(r.rid, r.start, r.complete)
+
     # Creating the output
     # costs, total_dist = final_costs_distance()
     # create_file("test_output.txt", costs, total_dist)
