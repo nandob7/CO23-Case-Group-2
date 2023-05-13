@@ -10,16 +10,3 @@ class Day:
             self.mileage += r.mileage
 
         return self.mileage
-
-    def schedule(self, request, route):
-        self.requests.append(request)
-        self.routes.append(route)
-        # self.depot_tools[request.tid] -= request.no_tools \
-        #     if request.pickup is None else - request.no_tools
-
-    def unschedule(self, request):
-        self.requests.pop()
-        self.routes.pop()
-        # self.depot_tools[request.tid] += request.no_tools \
-        #     if request.pickup is None else -request.no_tools
-

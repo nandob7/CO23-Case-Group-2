@@ -108,7 +108,7 @@ def plot_all():
 # Function to read a tool from a string representation
 def read_tool(tool):
     tid, size, max_no, cost = (int(part) for part in tool.split())
-    return Tool(tid, size, max_no, cost, DAYS)
+    return Tool(tid, size, max_no, cost)
 
 
 # Function to read a coordinate from a string representation
@@ -146,7 +146,6 @@ def calc_distances():
 def final_costs_distance():
     v_days = 0
     max_v = 0
-    min_dep_t = {t.tid: float('inf') for t in TOOLS}
     total_dist = 0
 
     for d in SCHEDULE:
@@ -167,19 +166,8 @@ def final_costs_distance():
     return tot_costs, total_dist
 
 
-def request_prios(max_dist_depot):
-    max_twindows = list(0 for r in TOOLS)
-    max_stays = list(0 for r in TOOLS)
-    for r in REQUESTS:
-        if len(r.twindow) > max_twindows[r.tid - 1]:
-            max_twindows[r.tid - 1] = len(r.twindow)
-        if r.stay > max_stays[r.tid - 1]:
-            max_stays[r.tid - 1] = r.stay
-
-    for r in REQUESTS:
-        r.priority_calc(max_twindows, max_stays, TOOLS, DISTANCES, max_dist_depot)
-
-    return sorted(REQUESTS, key=lambda r: r.priority, reverse=True)
+def request_prios():
+    return sorted(REQUESTS, key=lambda r: (r.tid, r.first))
 
 
 # Function that calculates the potential added costs of adding a request (and route) to
@@ -291,7 +279,7 @@ def unschedule_request(day, request):
     SCHEDULE[day - 1].unschedule(request)
 
     for t in request.tools:
-        for d in range(day, request.pickup+1):
+        for d in range(day, request.pickup + 1):
             t.in_use[d - 1] = 0
     request.pickup = None
 
@@ -331,6 +319,60 @@ def plan_requests(requests):
     #         return True
 
     return False
+
+
+def schedule_requests(requests, tools):
+    requests = sorted(requests, key=lambda r: r.last)  # sort jobs by their deadlines
+    return schedule_requests_recursive(requests, tools)
+
+
+def schedule_requests_recursive(requests, tools):
+    if not requests:
+        return True
+
+    r = requests[0]
+
+    # Find the earliest time slot where x machines are available
+    available_tools = [t for t in tools if t.available_from <= r.first]  # r.first is the release time of the job
+    if len(available_tools) < r.units:
+        # No sufficient machines are available at the release time
+        return False
+
+    available_tools = sorted(available_tools, key=lambda t: t.available_from)
+    for i in range(len(available_tools) - r.units + 1):
+        candidate_tools = available_tools[i:i + r.units]
+        tools_from = max([t.available_from for t in candidate_tools])
+        start_time = max(r.first, tools_from)
+        due_time = start_time + r.stay
+
+        if due_time > r.last + r.stay:  # Check if the job can be completed in time
+            continue
+
+        # Assign machines to the job
+        for t in candidate_tools:
+            t.old_available = t.available_from
+            t.available_from = due_time
+
+        # Update the job start and completion times
+        r.start = start_time
+        r.complete = due_time
+
+        # Get a list of tools that are available at the time of the next job's release
+        if len(requests) > 1:
+            next_release = requests[1].first
+            available_tools_next = [t for t in tools if t.available_from <= next_release]
+        else:
+            available_tools_next = tools
+
+        if schedule_requests_recursive(requests[1:], available_tools_next):  # Try to schedule the rest of the jobs
+            return True
+
+        # If the rest of the jobs can't be scheduled, undo the current assignment
+        for t in candidate_tools:
+            t.available_from = t.old_available
+        r.start = r.complete = None
+
+    return False  # No feasible assignment found for the current job
 
 
 # Function that creates the output file
@@ -393,12 +435,14 @@ if __name__ == '__main__':
     # distance_costs, distance = create_schedule()
 
     # Creating the schedule
-    priorities = request_prios(max_dist_depot)
-    plan_requests(priorities)
+    priorities = request_prios()
+    for t in TOOLS:
+        req_lst = [r for r in REQUESTS if r.tid == t.tid]
+        tool_lst = [tool for tool in ALL_TOOLS if t.tid == tool.tid]
+        schedule_requests(req_lst, tool_lst)
 
-    # for r in priorities:
-    #     print(r.rid, r.tid, r.no_tools, r.first, r.last, r.stay)
-
+    for r in REQUESTS:
+        print(r.rid, r.start, r.complete)
     # Creating the output
-    costs, total_dist = final_costs_distance()
-    create_file("test_output.txt", costs, total_dist)
+    # costs, total_dist = final_costs_distance()
+    # create_file("test_output.txt", costs, total_dist)

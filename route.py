@@ -27,17 +27,16 @@ class Route:
 
             if plan:
                 for i in range(request.no_tools):
-                    for d in range(day, day + request.stay+1):
+                    for d in range(day, day + request.stay + 1):
                         available_tools[i].in_use[d - 1] = 1
                         available_tools[i].used = True
                         request.tools.append(available_tools[i])
 
-                print(request.rid, request.stay, available_tools[0].in_use)
+                # print(request.rid, request.tid, request.first, request.stay, available_tools[0].in_use)
         else:
             self.visited.append(-request.rid)
             if plan:
                 request.tools.clear()
-
 
     def back_to_depot(self, reqs, distances):
         self.mileage += distances[reqs[abs(self.visited[-1]) - 1].lid, 0]
