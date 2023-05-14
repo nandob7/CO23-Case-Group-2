@@ -1,4 +1,6 @@
 # Importing the required modules and classes
+from itertools import combinations
+
 from location import Location
 from request import Request
 from route import Route
@@ -377,6 +379,9 @@ def schedule_requests_recursive(requests, tools):
 
 
 def schedule_requests_ILP(requests, tools):
+    # for r in requests:
+    #     r.stay -= 1
+
     # Create a new model
     m = Model("scheduling")
 
@@ -389,43 +394,36 @@ def schedule_requests_ILP(requests, tools):
 
     # Set objective: minimize the maximum lateness
     max_lateness = m.addVar(vtype=GRB.CONTINUOUS, name="max_lateness")
-    m.addConstr(max_lateness >= 0, "max_lateness_positive")
+    m.addConstr(max_lateness >= 0, "max_lateness_non_positive")
     m.setObjective(max_lateness, GRB.MINIMIZE)
 
     # Add constraints
     for r in requests:
         # Each job must be processed exactly the amount of times as requested
-        m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(1, DAYS + 1)) == r.units)
+        m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(1, DAYS + 1)) == r.stay * r.units)
 
         # The maximum lateness must be greater than or equal to the lateness of each job
-        m.addConstr(max_lateness >= quicksum(
-            (day + r.stay - r.last) * x[(r, t, day)] for t in tools for day in range(1, DAYS + 1)))
+        m.addConstr(max_lateness >= quicksum((day + r.stay - r.last) * x[(r, t, day)]
+                                             for t in tools for day in range(1, DAYS + 1)))
+        # Add constraints for jobs requiring multiple machines
+        if r.units > 1:
+            for day in range(1, DAYS + 1):
+                for toolset in combinations(tools, r.units):  # toolset is a subset of machines of size r.units
+                    # If a job starts on one machine on a specific day, it also needs to start on other required
+                    # machines on the same day
+                    m.addConstr(quicksum(x[(r, t, day)] for t in toolset) == r.units * x[(r, toolset[0], day)])
 
-    for t in tools:
-        for day in range(1, DAYS + 1):
-            # Each machine can start at most one job per day
-            m.addConstr(quicksum(x[(r, t, day)] for r in requests) <= 1)
-
-    for r in requests:
         for t in tools:
             for day in range(1, DAYS + 1):
                 # If a job starts on a machine on a specific day, no other job can start on the same machine during
                 # its processing time
-                m.addConstr(
-                    quicksum(x[(r, t, d)] for d in range(day, min(day + r.stay, DAYS) + 1) for r in requests) <= 1)
+                m.addConstr(quicksum(
+                    x[(r_other, t, d)] for r_other in requests for d in range(day, min(day + r.stay, DAYS + 1) - 1)) <= 1)
 
-    for r in requests:
-        for t in tools:
-            for day in range(1, DAYS - r.stay + 2):  # Adjusted range
-                # If a job starts on a day, it should continue for the next `stay` days on the same machine
-                m.addConstr(quicksum(x[(r, t, d)] for d in range(day, day + r.stay)) >= r.stay * x[(r, t, day)])
-
-                # If a job is running, it can't be disturbed by another job on the same machine
-                for r_other in requests:
-                    if r_other != r:
-                        m.addConstr(
-                            quicksum(x[(r_other, t, d)] for d in range(day, min(day + r.stay, DAYS) + 1)) <= 1 - x[
-                                (r, t, day)])
+    for t in tools:
+        for day in range(1, DAYS + 1):
+            # Each machine can start at most one job per day
+            m.addConstr(quicksum(x[(r, t, day)] for r in requests) <= 2)
 
     # Optimize model
     m.optimize()
@@ -498,16 +496,18 @@ if __name__ == '__main__':
     # distance_costs, distance = create_schedule()
 
     # # Creating the schedule
-    # priorities = request_prios()
+    priorities = request_prios()
     for t in TOOLS:
-        req_lst = [r for r in REQUESTS if r.tid == t.tid]
-        tool_lst = [tool for tool in ALL_TOOLS if t.tid == tool.tid]
-        # schedule_requests(req_lst, tool_lst)
-        schedule_requests_ILP(req_lst, tool_lst)
+        if t.tid == 2:
+            req_lst = [r for r in priorities if r.tid == t.tid]
+            tool_lst = [tool for tool in ALL_TOOLS if t.tid == tool.tid]
+
+            # schedule_requests(req_lst, tool_lst)
+            schedule_requests_ILP(req_lst, tool_lst)
 
     # for r in REQUESTS:
     #     print(r.rid, r.start, r.complete)
 
     # Creating the output
     # costs, total_dist = final_costs_distance()
-    # create_file("test_output.txt", costs, total_dist)
+    # create_file(file_path.split("/")[-1].split(".")[0]+"sol.txt", costs, total_dist)
