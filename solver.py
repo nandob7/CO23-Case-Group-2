@@ -124,8 +124,6 @@ def read_coordinate(coordinate):
 def read_request(request):
     rid, lid, first, last, stay, tid, no_tools = (int(part) for part in request.split())
     req = Request(rid, lid, first, last, stay, tid, no_tools)
-    # PROCESS_ON_FIRST[first].requests.append(req)
-    # PROCESS_ON_FIRST[first + stay].requests.append(req)
     VEHICLES.append(Vehicle(len(VEHICLES) + 1, DAYS))  # VEHICLES.append(Vehicle(rid))
     return req
 
@@ -169,293 +167,23 @@ def final_costs_distance():
     return tot_costs, total_dist
 
 
-def request_prios():
+def order_by_first():
     return sorted(REQUESTS, key=lambda r: (r.tid, r.first))
 
 
-# Function that calculates the potential added costs of adding a request (and route) to
-# a certain day in the horizon, can be given v_use and t_use to see if
-# any formerly unused vehicles or tools are needed and considered in the added costs
-def cost_if_added(day, request, route, t_use=None, v_use=0):
-    travel_costs = (day.mileage + route.mileage) * DISTANCE_COST
-    no_routes = len(day.routes) + 1
-
-    v_no_cost = 0
-    if no_routes > v_use > 0:
-        v_no_cost = VEHICLE_COST * (no_routes - v_use)
-
-    v_cost = no_routes * VEHICLE_DAY_COST + v_no_cost
-
-    t_cost = 0
-    if t_use is not None and day.depot_tools.get(request.tid) - request.no_tools \
-            < t_use.get(request.tid):
-        t_cost += (t_use.get(request.tid) - (day.depot_tools.get(request.tid)
-                                             - request.no_tools)) * TOOLS[request.tid - 1].cost
-
-    return travel_costs + v_cost + t_cost
-
-
-# Function that returns a dictionary with the least unused tools for each tool
-# over the time horizon -> tracks most simultaneously used tools for costs
-def min_available_tools():
-    result = {t.tid: float('inf') for t in TOOLS}
-    for d in SCHEDULE:
-        for t in TOOLS:
-            if d.depot_tools.get(t.tid) < result.get(t.tid):
-                result.update({t.tid: d.depot_tools.get(t.tid)})
-
-    return result
-
-
-# Function that finds the optimal day (cheapest) to schedule a request and its pickup
-# given a time window for the request based on the current schedule
-def find_opt_day(request, available_days):
-    best = None
-    min_cost = float('inf')
-
-    # For loop over the time window to find the minimal added costs
-    for day in available_days:
-        end = day + request.stay
-        delivery = Route(day)
-        pickup = Route(end)
-
-        # Checks if the request is possible to schedule on the day considering constraints
-        if delivery.possible_addition(request, DISTANCES, MAX_TRIP_DISTANCE, day, ALL_TOOLS):
-            delivery.add_visit(request, DISTANCES, ALL_TOOLS, day, is_pickup=False, plan=False)
-            # Gelijk terug naar depot voor simpel begin
-            delivery.back_to_depot(REQUESTS, DISTANCES)
-            old_d_cost = SCHEDULE[day - 1].mileage * DISTANCE_COST + \
-                         len(SCHEDULE[day - 1].routes) * VEHICLE_DAY_COST
-            added_cost = cost_if_added(SCHEDULE[day - 1], request, delivery,
-                                       min_available_tools()) - old_d_cost
-            pickup.add_visit(request, DISTANCES, ALL_TOOLS, end, is_pickup=True, plan=False)
-            # Gelijk terug naar depot voor simpel begin
-            pickup.back_to_depot(REQUESTS, DISTANCES)
-            old_p_cost = SCHEDULE[end - 1].mileage * DISTANCE_COST + \
-                         len(SCHEDULE[end - 1].routes) * VEHICLE_DAY_COST
-            added_cost += cost_if_added(SCHEDULE[end - 1], request,
-                                        pickup) - old_p_cost
-            if added_cost < min_cost:
-                min_cost = added_cost
-                best = day
-
-    return best, min_cost
-
-
-# Schedules a request either delivery or pickup given the chosen day.
-def schedule_request(day, request):
-    is_delivery = request.pickup is None
-    new_route = Route(day)
-    new_route.add_visit(request, DISTANCES, ALL_TOOLS, day, not is_delivery, plan=True)
-    new_route.back_to_depot(REQUESTS, DISTANCES)
-
-    SCHEDULE[day - 1].schedule(request, new_route)
-
-    # Updates request status and tools use on the day and duration of stay
-    if is_delivery:
-        request.deliver(day)
-        # for d in range(request.stay):
-        #     SCHEDULE[day + d].depot_tools[request.tid] -= request.no_tools
-
-    # Loop over all vehicles and assigns the route to the first available then breaks.
-    for v in VEHICLES:
-        if v.active[day - 1] == 0:
-            v.assign_route(new_route)
-
-            # Assigns vid to the request for tracking and backtracking
-            if is_delivery:
-                request.vid[0] = v.vid
-            else:
-                request.vid[1] = v.vid
-            break
-
-
-# Unschedule a request given the day, for backtracking purposes
-def unschedule_request(day, request):
-    for v in VEHICLES:
-        if v.vid in request.vid:
-            v.active[day - 1] = 0
-
-    request.vid = [0, 0]
-
-    SCHEDULE[request.pickup - 1].unschedule(request)
-    SCHEDULE[day - 1].unschedule(request)
-
-    for t in request.tools:
-        for d in range(day, request.pickup + 1):
-            t.in_use[d - 1] = 0
-    request.pickup = None
-
-
-# Recursive function that loops over all days and tries to schedule the given requests in
-# order on the best day
-def plan_requests(requests):
-    if not requests:
-        return True
-
-    r = requests[0]
-    best_day, _ = find_opt_day(r, r.twindow)
-
-    if best_day is not None:
-        schedule_request(best_day, r)
-        schedule_request(r.pickup, r)
-
-        if plan_requests(requests[1:]):
-            return True
-
-        # Backtrack if a feasible solution is not found
-        unschedule_request(best_day, r)
-        r.twindow.remove(best_day)
-
-        if plan_requests(requests):
-            return True
-
-    # Time windows gaan naar 0 en daarom kan hij nog geen ander schedule
-    # vinden na backtracken vgm")
-    # if r.pickup is not None:
-    #     print("test")
-    #     day = r.pickup - r.stay
-    #     unschedule_request(day, r)
-    #     r.twindow.remove(day)
-    #
-    #     if plan_requests(requests):
-    #         return True
-
-    return False
-
-
-def schedule_requests(requests, tools):
-    requests = sorted(requests, key=lambda r: r.last)  # sort jobs by their deadlines
-    return schedule_requests_recursive(requests, tools)
-
-
-def schedule_requests_recursive(requests, tools):
-    if not requests:
-        return True
-
-    r = requests[0]
-
-    # Find the earliest time slot where x machines are available
-    available_tools = [t for t in tools if t.available_from <= r.first]  # r.first is the release time of the job
-    if len(available_tools) < r.units:
-        # No sufficient machines are available at the release time
-        return False
-
-    available_tools = sorted(available_tools, key=lambda t: t.available_from)
-    for i in range(len(available_tools) - r.units + 1):
-        candidate_tools = available_tools[i:i + r.units]
-        tools_from = max([t.available_from for t in candidate_tools])
-        start_time = max(r.first, tools_from)
-        due_time = start_time + r.stay
-
-        if due_time > r.last + r.stay:  # Check if the job can be completed in time
-            continue
-
-        # Assign machines to the job
-        for t in candidate_tools:
-            t.old_available = t.available_from
-            t.available_from = due_time
-
-        # Update the job start and completion times
-        r.start = start_time
-        r.complete = due_time
-
-        # Get a list of tools that are available at the time of the next job's release
-        if len(requests) > 1:
-            next_release = requests[1].first
-            available_tools_next = [t for t in tools if t.available_from <= next_release]
-        else:
-            available_tools_next = tools
-
-        if schedule_requests_recursive(requests[1:], available_tools_next):  # Try to schedule the rest of the jobs
-            return True
-
-        # If the rest of the jobs can't be scheduled, undo the current assignment
-        for t in candidate_tools:
-            t.available_from = t.old_available
-        r.start = r.complete = None
-
-    return False  # No feasible assignment found for the current job
-
-
-def schedule_reqs_ILP_x(requests, tools):
-    # for r in requests:
-    #     r.stay -= 1
-
-    # Create a new model
-    m = Model("scheduling")
-
-    # Create variables
-    x = {}  # job r is being processed on machine t at day d
-    for r in requests:
-        for t in tools:
-            for day in range(1, DAYS + 1):
-                x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"x_{r.rid}_{t.tid}_{t.id}_{day}")
-
-    # Set objective: minimize the maximum lateness
-    max_lateness = m.addVar(vtype=GRB.CONTINUOUS, name="max_lateness")
-    m.addConstr(max_lateness <= 0, "max_lateness_non_positive")
-    m.setObjective(max_lateness, GRB.MINIMIZE)
-
-    # Add constraints
-    for r in requests:
-        # Each job must be processed exactly the amount of times as requested
-        m.addConstr(
-            quicksum(x[(r, t, day)] for t in tools for day in range(r.first, r.last + r.stay + 1)) == r.units * (
-                        r.stay + 1))
-
-        for t in tools:
-            for day in range(r.first, r.last - r.stay + 1):
-                # If a job is being processed on a machine on a specific day, it must also be processed on the same
-                # machine for the next 'r.stay' days
-                m.addConstr(quicksum(x[(r, t, d)] for d in range(day, day + r.stay + 1)) >= r.stay * x[(r, t, day)])
-
-            for day in range(1, DAYS + 1):
-                # If a job is being processed on a machine on a specific day, no other job can be processed on the same
-                # machine during its processing time
-                m.addConstr(quicksum(
-                    x[(r_other, t, d)] for r_other in requests for d in
-                    range(day, min(day + r.stay + 1, DAYS + 1))) <= 1)
-
-        # The maximum lateness must be greater than or equal to the lateness of each job
-        m.addConstr(max_lateness >= quicksum((day - (r.last + r.stay)) * x[(r, t, day)]
-                                             for t in tools for day in range(1, DAYS + 1)))
-
-        for day in range(1, DAYS + 1):
-            # Each job must be processed on r.units number of machines on the same day
-            m.addConstr(quicksum(x[(r, t, day)] for t in tools) == r.units)
-
-
-    for t in tools:
-        for day in range(1, DAYS + 1):
-            # Each machine can start at most one job per day
-            m.addConstr(quicksum(x[(r, t, day)] for r in requests) <= 1)
-
-    # Optimize model
-    m.optimize()
-
-    # Print the optimal schedule
-    for v in m.getVars():
-        if v.x > 0.5:
-            print(f"{v.varName}: {v.x}")
-
-    print(f"Max lateness: {max_lateness.x}")
-
-
 def schedule_requests_ILP(requests, tools):
-    # for r in requests:
-    #     r.stay -= 1
+    for r in requests:
+        r.stay += 1
 
     # Create a new model
     m = Model("scheduling")
 
     # Create variables
     x = {}  # job r starts on machine t at day d
-    # y = {}  # job r is being processed on machine t at day d
     for r in requests:
         for t in tools:
             for day in range(1, DAYS + 1):
-                x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"x_r{r.rid}_t{t.tid}.{t.id}_d{day}")
+                x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"{day},{r.rid}")
                 # y[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"y_r{r.rid}_t{t.tid}.{t.id}_d{day}")
 
     # Set objective: minimize the maximum lateness
@@ -467,22 +195,14 @@ def schedule_requests_ILP(requests, tools):
     for r in requests:
         # Each job must start exactly r.units number of times
         m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(r.first, r.last + 1)) == r.units)
-        m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(1, r.first)) == 0)
+        if r.first > 1:
+            m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(1, r.first)) == 0)
         m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(r.last + 1, DAYS + 1)) == 0)
 
         # If a job starts on a day, it must start on r.units number of machines
         for day in range(r.first, r.last + 1):
             for t in tools:
                 m.addConstr(quicksum(x[(r, t_other, day)] for t_other in tools) >= r.units * x[(r, t, day)])
-
-        for t in tools:
-            # If a job starts on a machine on a specific day, it continues on the same machine for its entire duration
-            # for day in range(r.first, min(r.last + 1, DAYS - r.stay + 1)):
-            #     m.addConstr(quicksum(y[(r, t, d)] for d in range(day, min(day + r.stay, DAYS + 1))) == r.stay * x[
-            #         (r, t, day)])
-
-            # A job cannot be repeated on the same machine
-            m.addConstr(quicksum(x[(r, t, day)] for day in range(1, DAYS + 1)) <= 1)
 
         # The maximum lateness must be greater than or equal to the lateness of each job
         for day in range(r.first, min(r.last + 1, DAYS - r.stay + 1)):
@@ -493,15 +213,28 @@ def schedule_requests_ILP(requests, tools):
             # Each machine can process at most one job per day
             m.addConstr(quicksum(x[(r, t, day)] for r in requests) <= 1)
 
+            # If a job starts on a machine on a specific day, no other job can start on the same machine during its
+            # processing time
+            for r in requests:
+                for r_other in requests:
+                    if r_other != r:
+                        m.addConstr(quicksum(x[(r, t, d)] for d in range(day, min(day + r.stay, DAYS + 1)))
+                                    + quicksum(x[(r_other, t, d_other)] for d_other in
+                                               range(max(day, r_other.first),
+                                                     min(day + r.stay, r_other.last + 1))) <= 1)
+
     # Optimize model
     m.optimize()
 
-    # Print the optimal schedule
+    # Return the optimal schedule as a list of lists of requests per day
+    days = [list() for d in range(1, DAYS + 1)]
+
     for v in m.getVars():
         if v.x > 0.5:
-            print(f"{v.varName}: {v.x}")
+            entry = [int(value) for value in v.varName.split(',')]
+            days[entry[0]].append(entry[1])
 
-    print(f"Max lateness: {max_lateness.x}")
+    return days
 
 
 # Function that creates the output file
@@ -561,21 +294,22 @@ if __name__ == '__main__':
     read_file(input_lines)
     DISTANCES, max_dist_depot = calc_distances()
     # plot_all()
-    # distance_costs, distance = create_schedule()
 
-    # # Creating the schedule
-    priorities = request_prios()
+    # Creating the schedule
+    priorities = order_by_first()
+    final = [list() for i in range(1, DAYS+1)]
     for t in TOOLS:
-        if t.tid == 2:
-            req_lst = [r for r in priorities if r.tid == t.tid]
-            tool_lst = [tool for tool in ALL_TOOLS if t.tid == tool.tid]
+        req_lst = [r for r in priorities if r.tid == t.tid]
+        tool_lst = [tool for tool in ALL_TOOLS if t.tid == tool.tid]
 
-            # schedule_requests(req_lst, tool_lst)
-            schedule_requests_ILP(req_lst, tool_lst)
+        result = schedule_requests_ILP(req_lst, tool_lst)
 
-    # for r in REQUESTS:
-    #     print(r.rid, r.start, r.complete)
+        for i, res in enumerate(result):
+            for req in res:
+                final[i-1].append(req)
 
+    for f in final:
+        print(f)
     # Creating the output
     # costs, total_dist = final_costs_distance()
     # create_file(file_path.split("/")[-1].split(".")[0]+"sol.txt", costs, total_dist)
