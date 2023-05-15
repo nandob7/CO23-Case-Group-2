@@ -399,8 +399,11 @@ def schedule_requests_ILP(requests, tools):
 
     # Add constraints
     for r in requests:
-        # Each job must be processed exactly the amount of times as requested
-        m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(1, DAYS + 1)) == r.stay * r.units)
+        # Each job must be processed exactly the amount of times as requested on any day
+        m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(1, DAYS + 1)) == r.units)
+
+        # Each job must be processed exactly the duration of the stay
+        m.addConstr(quicksum(x[(r, t, day)] for day in range(1, DAYS + 1) for t in tools) == r.stay + 1)
 
         # The maximum lateness must be greater than or equal to the lateness of each job
         m.addConstr(max_lateness >= quicksum((day + r.stay - r.last) * x[(r, t, day)]
