@@ -386,28 +386,31 @@ def schedule_requests_ILP(requests, tools):
     m = Model("scheduling")
 
     # Create variables
-    x = {}
+    x = {}  # job r starts on machine t at day d
+    y = {}  # job r is being processed on machine t at day d
     for r in requests:
         for t in tools:
             for day in range(1, DAYS + 1):
                 x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"x_{r.rid}_{t.tid}_{t.id}_{day}")
+                y[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"y_{r.rid}_{t.tid}_{t.id}_{day}")
 
     # Set objective: minimize the maximum lateness
     max_lateness = m.addVar(vtype=GRB.CONTINUOUS, name="max_lateness")
-    m.addConstr(max_lateness >= 0, "max_lateness_non_positive")
+    m.addConstr(max_lateness <= 0, "max_lateness_non_positive")
     m.setObjective(max_lateness, GRB.MINIMIZE)
 
     # Add constraints
     for r in requests:
-        # Each job must be processed exactly the amount of times as requested on any day
+        # Each job must be processed exactly the amount of times as requested
         m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(1, DAYS + 1)) == r.units)
 
         # Each job must be processed exactly the duration of the stay
         m.addConstr(quicksum(x[(r, t, day)] for day in range(1, DAYS + 1) for t in tools) == r.stay + 1)
 
         # The maximum lateness must be greater than or equal to the lateness of each job
-        m.addConstr(max_lateness >= quicksum((day + r.stay - r.last) * x[(r, t, day)]
+        m.addConstr(max_lateness >= quicksum((day - r.last) * x[(r, t, day)]
                                              for t in tools for day in range(1, DAYS + 1)))
+
         # Add constraints for jobs requiring multiple machines
         if r.units > 1:
             for day in range(1, DAYS + 1):
@@ -418,15 +421,19 @@ def schedule_requests_ILP(requests, tools):
 
         for t in tools:
             for day in range(1, DAYS + 1):
-                # If a job starts on a machine on a specific day, no other job can start on the same machine during
-                # its processing time
-                m.addConstr(quicksum(
-                    x[(r_other, t, d)] for r_other in requests for d in range(day, min(day + r.stay, DAYS + 1) - 1)) <= 1)
+                # If a job starts on a machine on a specific day, it must also be processed on the same machine
+                # for the next 'r.stay' days
+                m.addConstr(quicksum(y[(r, t, d)] for d in range(day, min(day + r.stay + 1, DAYS + 1)))
+                            == r.stay * x[(r, t, day)])
+
+                # If a job is being processed on a machine on a specific day, no other job can be processed on the same
+                # machine at the same day
+                m.addConstr(quicksum(y[(r_other, t, day)] for r_other in requests) <= 1)
 
     for t in tools:
         for day in range(1, DAYS + 1):
             # Each machine can start at most one job per day
-            m.addConstr(quicksum(x[(r, t, day)] for r in requests) <= 2)
+            m.addConstr(quicksum(x[(r, t, day)] for r in requests) <= 1)
 
     # Optimize model
     m.optimize()
