@@ -378,7 +378,7 @@ def schedule_requests_recursive(requests, tools):
     return False  # No feasible assignment found for the current job
 
 
-def schedule_requests_ILP(requests, tools):
+def schedule_reqs_ILP_x(requests, tools):
     # for r in requests:
     #     r.stay -= 1
 
@@ -386,13 +386,11 @@ def schedule_requests_ILP(requests, tools):
     m = Model("scheduling")
 
     # Create variables
-    x = {}  # job r starts on machine t at day d
-    y = {}  # job r is being processed on machine t at day d
+    x = {}  # job r is being processed on machine t at day d
     for r in requests:
         for t in tools:
             for day in range(1, DAYS + 1):
                 x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"x_{r.rid}_{t.tid}_{t.id}_{day}")
-                y[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"y_{r.rid}_{t.tid}_{t.id}_{day}")
 
     # Set objective: minimize the maximum lateness
     max_lateness = m.addVar(vtype=GRB.CONTINUOUS, name="max_lateness")
@@ -402,37 +400,97 @@ def schedule_requests_ILP(requests, tools):
     # Add constraints
     for r in requests:
         # Each job must be processed exactly the amount of times as requested
-        m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(1, DAYS + 1)) == r.units)
-
-        # Each job must be processed exactly the duration of the stay
-        m.addConstr(quicksum(x[(r, t, day)] for day in range(1, DAYS + 1) for t in tools) == r.stay + 1)
-
-        # The maximum lateness must be greater than or equal to the lateness of each job
-        m.addConstr(max_lateness >= quicksum((day - r.last) * x[(r, t, day)]
-                                             for t in tools for day in range(1, DAYS + 1)))
-
-        # Add constraints for jobs requiring multiple machines
-        if r.units > 1:
-            for day in range(1, DAYS + 1):
-                for toolset in combinations(tools, r.units):  # toolset is a subset of machines of size r.units
-                    # If a job starts on one machine on a specific day, it also needs to start on other required
-                    # machines on the same day
-                    m.addConstr(quicksum(x[(r, t, day)] for t in toolset) == r.units * x[(r, toolset[0], day)])
+        m.addConstr(
+            quicksum(x[(r, t, day)] for t in tools for day in range(r.first, r.last + r.stay + 1)) == r.units * (
+                        r.stay + 1))
 
         for t in tools:
-            for day in range(1, DAYS + 1):
-                # If a job starts on a machine on a specific day, it must also be processed on the same machine
-                # for the next 'r.stay' days
-                m.addConstr(quicksum(y[(r, t, d)] for d in range(day, min(day + r.stay + 1, DAYS + 1)))
-                            == r.stay * x[(r, t, day)])
+            for day in range(r.first, r.last - r.stay + 1):
+                # If a job is being processed on a machine on a specific day, it must also be processed on the same
+                # machine for the next 'r.stay' days
+                m.addConstr(quicksum(x[(r, t, d)] for d in range(day, day + r.stay + 1)) >= r.stay * x[(r, t, day)])
 
+            for day in range(1, DAYS + 1):
                 # If a job is being processed on a machine on a specific day, no other job can be processed on the same
-                # machine at the same day
-                m.addConstr(quicksum(y[(r_other, t, day)] for r_other in requests) <= 1)
+                # machine during its processing time
+                m.addConstr(quicksum(
+                    x[(r_other, t, d)] for r_other in requests for d in
+                    range(day, min(day + r.stay + 1, DAYS + 1))) <= 1)
+
+        # The maximum lateness must be greater than or equal to the lateness of each job
+        m.addConstr(max_lateness >= quicksum((day - (r.last + r.stay)) * x[(r, t, day)]
+                                             for t in tools for day in range(1, DAYS + 1)))
+
+        for day in range(1, DAYS + 1):
+            # Each job must be processed on r.units number of machines on the same day
+            m.addConstr(quicksum(x[(r, t, day)] for t in tools) == r.units)
+
 
     for t in tools:
         for day in range(1, DAYS + 1):
             # Each machine can start at most one job per day
+            m.addConstr(quicksum(x[(r, t, day)] for r in requests) <= 1)
+
+    # Optimize model
+    m.optimize()
+
+    # Print the optimal schedule
+    for v in m.getVars():
+        if v.x > 0.5:
+            print(f"{v.varName}: {v.x}")
+
+    print(f"Max lateness: {max_lateness.x}")
+
+
+def schedule_requests_ILP(requests, tools):
+    # for r in requests:
+    #     r.stay -= 1
+
+    # Create a new model
+    m = Model("scheduling")
+
+    # Create variables
+    x = {}  # job r starts on machine t at day d
+    # y = {}  # job r is being processed on machine t at day d
+    for r in requests:
+        for t in tools:
+            for day in range(1, DAYS + 1):
+                x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"x_r{r.rid}_t{t.tid}.{t.id}_d{day}")
+                # y[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"y_r{r.rid}_t{t.tid}.{t.id}_d{day}")
+
+    # Set objective: minimize the maximum lateness
+    max_lateness = m.addVar(vtype=GRB.CONTINUOUS, name="max_lateness")
+    m.addConstr(max_lateness <= 0, "max_lateness_non_positive")
+    m.setObjective(max_lateness, GRB.MINIMIZE)
+
+    # Add constraints
+    for r in requests:
+        # Each job must start exactly r.units number of times
+        m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(r.first, r.last + 1)) == r.units)
+        m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(1, r.first)) == 0)
+        m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(r.last + 1, DAYS + 1)) == 0)
+
+        # If a job starts on a day, it must start on r.units number of machines
+        for day in range(r.first, r.last + 1):
+            for t in tools:
+                m.addConstr(quicksum(x[(r, t_other, day)] for t_other in tools) >= r.units * x[(r, t, day)])
+
+        for t in tools:
+            # If a job starts on a machine on a specific day, it continues on the same machine for its entire duration
+            # for day in range(r.first, min(r.last + 1, DAYS - r.stay + 1)):
+            #     m.addConstr(quicksum(y[(r, t, d)] for d in range(day, min(day + r.stay, DAYS + 1))) == r.stay * x[
+            #         (r, t, day)])
+
+            # A job cannot be repeated on the same machine
+            m.addConstr(quicksum(x[(r, t, day)] for day in range(1, DAYS + 1)) <= 1)
+
+        # The maximum lateness must be greater than or equal to the lateness of each job
+        for day in range(r.first, min(r.last + 1, DAYS - r.stay + 1)):
+            m.addConstr(max_lateness >= (day + r.stay - (r.last + r.stay)) * x[(r, t, day)])
+
+    for t in tools:
+        for day in range(1, DAYS + 1):
+            # Each machine can process at most one job per day
             m.addConstr(quicksum(x[(r, t, day)] for r in requests) <= 1)
 
     # Optimize model
