@@ -76,9 +76,6 @@ def read_file(txt):
         LOCATIONS.append(read_coordinate(txt[12 + no_tools + 2 + i]))
 
     for t in TOOLS:
-        for d in SCHEDULE:
-            d.depot_tools.update({t.tid: t.max_no})
-
         for i in range(1, t.max_no + 1):
             tool = copy.deepcopy(t)
             tool.id = i
@@ -111,7 +108,7 @@ def plot_all():
 # Function to read a tool from a string representation
 def read_tool(tool):
     tid, size, max_no, cost = (int(part) for part in tool.split())
-    return Tool(tid, size, max_no, cost)
+    return Tool(tid, size, max_no, cost, DAYS)
 
 
 # Function to read a coordinate from a string representation
@@ -171,6 +168,52 @@ def order_by_first():
     return sorted(REQUESTS, key=lambda r: (r.tid, r.first))
 
 
+def schedule_request(day, request, tids=None):
+    is_delivery = request.pickup is None
+    new_route = Route(day)
+    new_route.add_visit(request, DISTANCES, ALL_TOOLS, day, is_pickup=not is_delivery)
+    new_route.back_to_depot(REQUESTS, DISTANCES)
+
+    SCHEDULE[day - 1].schedule(request, new_route)
+
+    # Updates request status and tools use on the day and duration of stay
+    if is_delivery:
+        request.deliver(day)
+        tools = [t for t in ALL_TOOLS if t.tid == request.tid and t.id in tids]
+        for t in tools:
+            t.used = True
+
+    # Loop over all vehicles and assigns the route to the first available then breaks.
+    for v in VEHICLES:
+        if v.active[day - 1] == 0:
+            v.assign_route(new_route)
+
+            # Assigns vid to the request for tracking and backtracking
+            if is_delivery:
+                request.vid[0] = v.vid
+            else:
+                request.vid[1] = v.vid
+            break
+
+
+def combine_tuples(tuples):
+    combined_tuples = []
+    dict_tuples = {}
+
+    for tuple_item in tuples:
+        key = tuple_item[0]
+        value = tuple_item[1]
+        if key in dict_tuples:
+            dict_tuples[key].append(value)
+        else:
+            dict_tuples[key] = [value]
+
+    for key, values in dict_tuples.items():
+        combined_tuples.append((key,) + tuple(values))
+
+    return combined_tuples
+
+
 def schedule_requests_ILP(requests, tools):
     for r in requests:
         r.stay += 1
@@ -183,8 +226,7 @@ def schedule_requests_ILP(requests, tools):
     for r in requests:
         for t in tools:
             for day in range(1, DAYS + 1):
-                x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"{day},{r.rid}")
-                # y[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"y_r{r.rid}_t{t.tid}.{t.id}_d{day}")
+                x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"{day},{r.rid},{t.id}")
 
     # Set objective: minimize the maximum lateness
     max_lateness = m.addVar(vtype=GRB.CONTINUOUS, name="max_lateness")
@@ -229,10 +271,13 @@ def schedule_requests_ILP(requests, tools):
     # Return the optimal schedule as a list of lists of requests per day
     days = [list() for d in range(1, DAYS + 1)]
 
+    for r in requests:
+        r.stay -= 1
+
     for v in m.getVars():
         if v.x > 0.5:
             entry = [int(value) for value in v.varName.split(',')]
-            days[entry[0]].append(entry[1])
+            days[entry[0]].append((entry[1], entry[2]))
 
     return days
 
@@ -251,7 +296,7 @@ def create_file(filename, total_costs, total_distance):
 
         vehicle_days = 0
         for v in VEHICLES:
-            vehicle_days += v.active_days
+            vehicle_days += sum(v.active)
 
         f.write(f'NUMBER_OF_VEHICLE_DAYS = {vehicle_days}\n')
 
@@ -293,11 +338,11 @@ if __name__ == '__main__':
     # Processing input
     read_file(input_lines)
     DISTANCES, max_dist_depot = calc_distances()
-    # plot_all()
+    plot_all()
 
     # Creating the schedule
     priorities = order_by_first()
-    final = [list() for i in range(1, DAYS+1)]
+    schedule = [list() for i in range(1, DAYS + 1)]
     for t in TOOLS:
         req_lst = [r for r in priorities if r.tid == t.tid]
         tool_lst = [tool for tool in ALL_TOOLS if t.tid == tool.tid]
@@ -306,10 +351,17 @@ if __name__ == '__main__':
 
         for i, res in enumerate(result):
             for req in res:
-                final[i-1].append(req)
+                schedule[i].append(req)
 
-    for f in final:
-        print(f)
+    for i, day in enumerate(schedule):
+        schedule[i] = combine_tuples(day)
+
+    for i, day in enumerate(schedule):
+        for req in day:
+            r = REQUESTS[req[0] - 1]
+            schedule_request(i, r, req[1:])
+            schedule_request(r.pickup, r)
+
     # Creating the output
-    # costs, total_dist = final_costs_distance()
-    # create_file(file_path.split("/")[-1].split(".")[0]+"sol.txt", costs, total_dist)
+    costs, total_dist = final_costs_distance()
+    create_file(file_path.split("/")[-1].split(".")[0] + "sol.txt", costs, total_dist)

@@ -10,3 +10,7 @@ class Day:
             self.mileage += r.mileage
 
         return self.mileage
+
+    def schedule(self, request, route):
+        self.requests.append(request)
+        self.routes.append(route)
