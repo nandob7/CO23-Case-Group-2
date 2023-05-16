@@ -142,7 +142,6 @@ def calc_distances():
 
 # Function to calculate the total costs given a value of distance costs
 def final_costs_distance():
-    v_days = 0
     max_v = 0
     total_dist = 0
 
@@ -150,16 +149,19 @@ def final_costs_distance():
         d.calc_mileage()
         total_dist += d.mileage
 
-        v_days += len(d.routes)
         if len(d.routes) > max_v:
             max_v = len(d.routes)
 
-    tool_cost = 0
-    for t in ALL_TOOLS:
-        if t.used:
-            tool_cost += t.cost
+    vehicle_days = 0
+    for v in VEHICLES:
+        vehicle_days += sum(v.active)
 
-    tot_costs = v_days * VEHICLE_DAY_COST + max_v * VEHICLE_COST + tool_cost
+    tool_cost = 0
+    used_tools = [t for t in ALL_TOOLS if sum(t.in_use) > 0]
+    for t in used_tools:
+        tool_cost += t.cost
+
+    tot_costs = vehicle_days * VEHICLE_DAY_COST + max_v * VEHICLE_COST + tool_cost + total_dist * DISTANCE_COST
 
     return tot_costs, total_dist
 
@@ -179,9 +181,15 @@ def schedule_request(day, request, tids=None):
     # Updates request status and tools use on the day and duration of stay
     if is_delivery:
         request.deliver(day)
-        tools = [t for t in ALL_TOOLS if t.tid == request.tid and t.id in tids]
+        tools = [t for t in ALL_TOOLS if t.tid == request.tid]
+        assigned_tools = []
         for t in tools:
-            t.used = True
+            if sum(t.in_use[day - 1: day + request.stay]) == 0:
+                assigned_tools.append(t)
+                for d in range(day - 1, day + request.stay):
+                    t.in_use[d] = True
+                if len(assigned_tools) == request.units:
+                    break
 
     # Loop over all vehicles and assigns the route to the first available then breaks.
     for v in VEHICLES:
@@ -302,7 +310,7 @@ def create_file(filename, total_costs, total_distance):
 
         tool_use = [0 for t in TOOLS]
         for t in ALL_TOOLS:
-            if t.used:
+            if sum(t.in_use) > 0:
                 tool_use[t.tid - 1] += 1
 
         f.write(f'TOOL_USE = {" ".join(map(str, tool_use))}\n')

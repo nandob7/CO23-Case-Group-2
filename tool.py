@@ -6,7 +6,7 @@ class Tool:
         self.available_from = 0
         self.old_available = 0
         self.used = False
-        self.in_use = [0 for i in range(days)]
+        self.in_use = [False] * days
         self.max_no = max_no
         self.cost = cost
 

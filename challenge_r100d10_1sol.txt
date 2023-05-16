@@ -3,9 +3,9 @@ NAME = tools over vehicles over vehicle days over distance with 100 requests ove
 
 MAX_NUMBER_OF_VEHICLES = 28
 NUMBER_OF_VEHICLE_DAYS = 200
-TOOL_USE = 29 13 16 28 24
+TOOL_USE = 24 12 14 26 19
 DISTANCE = 1409920
-COST = 4744800000
+COST = 4146209920
 
 DAY = 1
 NUMBER_OF_VEHICLES = 11
