@@ -236,7 +236,8 @@ def schedule_requests_ILP(requests, tools):
     for r in requests:
         for t in tools:
             for day in range(1, DAYS + 1):
-                x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"{day},{r.rid}")
+                if r.first <= day <= r.last + r.stay:
+                    x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"{day},{r.rid}")
 
     # Set objective: minimize the maximum lateness
     max_lateness = m.addVar(vtype=GRB.CONTINUOUS, name="max_lateness")
@@ -247,9 +248,6 @@ def schedule_requests_ILP(requests, tools):
     for r in requests:
         # Each job must start exactly r.units number of times
         m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(r.first, r.last + 1)) == r.units)
-        if r.first > 1:
-            m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(1, r.first)) == 0)
-        m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(r.last + 1, DAYS + 1)) == 0)
 
         # If a job starts on a day, it must start on r.units number of machines
         for day in range(r.first, r.last + 1):
@@ -263,14 +261,14 @@ def schedule_requests_ILP(requests, tools):
     for t in tools:
         for day in range(1, DAYS + 1):
             # Each machine can process at most one job per day
-            m.addConstr(quicksum(x[(r, t, day)] for r in requests) <= 1)
+            m.addConstr(quicksum(x[(r, t, day)] for r in requests if r.first <= day <= r.last + r.stay) <= 1)
 
             # If a job starts on a machine on a specific day, no other job can start on the same machine during its
             # processing time
             for r in requests:
                 for r_other in requests:
                     if r_other != r:
-                        m.addConstr(quicksum(x[(r, t, d)] for d in range(day, min(day + r.stay, DAYS + 1)))
+                        m.addConstr(quicksum(x[(r, t, d)] for d in range(day, min(day + r.stay, DAYS + 1)) if r.first <= d <= r.last + r.stay)
                                     + quicksum(x[(r_other, t, d_other)] for d_other in
                                                range(max(day, r_other.first),
                                                      min(day + r.stay, r_other.last + 1))) <= 1)
