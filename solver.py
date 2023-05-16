@@ -1,19 +1,17 @@
 # Importing the required modules and classes
-from itertools import combinations
-
+from day import Day
+from gurobipy import *
 from location import Location
 from request import Request
 from route import Route
-from tool import Tool
-from day import Day
-import numpy as np
-import matplotlib.pyplot as plt
-import tkinter as tk
 from tkinter import filedialog
-from gurobipy import *
-import copy
-
+from tool import Tool
 from vehicle import Vehicle
+import copy
+import matplotlib.pyplot as plt
+import numpy as np
+import time
+import tkinter as tk
 
 # Initializing global variables with default values
 DATASET = ""
@@ -170,7 +168,7 @@ def order_by_first():
     return sorted(REQUESTS, key=lambda r: (r.tid, r.first))
 
 
-def schedule_request(day, request, tids=None):
+def schedule_request(day, request):
     is_delivery = request.pickup is None
     new_route = Route(day)
     new_route.add_visit(request, DISTANCES, ALL_TOOLS, day, is_pickup=not is_delivery)
@@ -204,22 +202,26 @@ def schedule_request(day, request, tids=None):
             break
 
 
-def combine_tuples(tuples):
-    combined_tuples = []
-    dict_tuples = {}
+def plan_schedule(sorted_requests):
+    schedule = [list() for i in range(1, DAYS + 1)]
+    for t in TOOLS:
+        req_lst = [r for r in sorted_requests if r.tid == t.tid]
+        tool_lst = [tool for tool in ALL_TOOLS if t.tid == tool.tid]
 
-    for tuple_item in tuples:
-        key = tuple_item[0]
-        value = tuple_item[1]
-        if key in dict_tuples:
-            dict_tuples[key].append(value)
-        else:
-            dict_tuples[key] = [value]
+        result = schedule_requests_ILP(req_lst, tool_lst)
 
-    for key, values in dict_tuples.items():
-        combined_tuples.append((key,) + tuple(values))
+        for i, res in enumerate(result):
+            for req in res:
+                schedule[i].append(req)
 
-    return combined_tuples
+    for i, day in enumerate(schedule):
+        schedule[i] = list(set(day))
+
+    for i, day in enumerate(schedule):
+        for rid in day:
+            r = REQUESTS[rid - 1]
+            schedule_request(i, r)
+            schedule_request(r.pickup, r)
 
 
 def schedule_requests_ILP(requests, tools):
@@ -234,7 +236,7 @@ def schedule_requests_ILP(requests, tools):
     for r in requests:
         for t in tools:
             for day in range(1, DAYS + 1):
-                x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"{day},{r.rid},{t.id}")
+                x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"{day},{r.rid}")
 
     # Set objective: minimize the maximum lateness
     max_lateness = m.addVar(vtype=GRB.CONTINUOUS, name="max_lateness")
@@ -285,7 +287,7 @@ def schedule_requests_ILP(requests, tools):
     for v in m.getVars():
         if v.x > 0.5:
             entry = [int(value) for value in v.varName.split(',')]
-            days[entry[0]].append((entry[1], entry[2]))
+            days[entry[0]].append(entry[1])
 
     return days
 
@@ -339,6 +341,9 @@ if __name__ == '__main__':
     # Display a file dialog and wait for the user to select a file
     file_path = filedialog.askopenfilename()
 
+    # Record the starting time
+    start_time = time.time()
+
     # Read the contents of the file into a list of strings
     with open(file_path, 'r') as file:
         input_lines = [line.strip() for line in file]
@@ -350,26 +355,14 @@ if __name__ == '__main__':
 
     # Creating the schedule
     priorities = order_by_first()
-    schedule = [list() for i in range(1, DAYS + 1)]
-    for t in TOOLS:
-        req_lst = [r for r in priorities if r.tid == t.tid]
-        tool_lst = [tool for tool in ALL_TOOLS if t.tid == tool.tid]
-
-        result = schedule_requests_ILP(req_lst, tool_lst)
-
-        for i, res in enumerate(result):
-            for req in res:
-                schedule[i].append(req)
-
-    for i, day in enumerate(schedule):
-        schedule[i] = combine_tuples(day)
-
-    for i, day in enumerate(schedule):
-        for req in day:
-            r = REQUESTS[req[0] - 1]
-            schedule_request(i, r, req[1:])
-            schedule_request(r.pickup, r)
+    plan_schedule(priorities)
 
     # Creating the output
     costs, total_dist = final_costs_distance()
     create_file(file_path.split("/")[-1].split(".")[0] + "sol.txt", costs, total_dist)
+
+    # Calculate the elapsed time
+    elapsed_time = time.time() - start_time
+
+    # Print the runtime in seconds
+    print("Runtime:", elapsed_time, "seconds")
