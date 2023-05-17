@@ -209,6 +209,7 @@ def plan_schedule(sorted_requests):
         tool_lst = [tool for tool in ALL_TOOLS if t.tid == tool.tid]
 
         result = schedule_requests_ILP(req_lst, tool_lst)
+        # result = schedule_ramon(req_lst)
 
         for i, res in enumerate(result):
             for req in res:
@@ -220,7 +221,7 @@ def plan_schedule(sorted_requests):
     for i, day in enumerate(schedule):
         for rid in day:
             r = REQUESTS[rid - 1]
-            schedule_request(i, r)
+            schedule_request(i + 1, r)
             schedule_request(r.pickup, r)
 
     # for i, d in enumerate(schedule):
@@ -234,7 +235,7 @@ def plan_schedule(sorted_requests):
 
 
 def schedule_ramon(jobs):
-    initial_supply = TOOLS[jobs[0].tid - 1].no_tools
+    initial_supply = TOOLS[jobs[0].tid - 1].max_no
 
     # Model
     m = Model('scheduling')
@@ -248,14 +249,15 @@ def schedule_ramon(jobs):
             x[j.rid, t] = m.addVar(vtype=GRB.BINARY, name=f"{t},{j.rid}")
             if t + j.stay <= DAYS:
                 r[j.rid, t + j.stay] = m.addVar(vtype=GRB.INTEGER, name=f"r_{j.rid}_{t + j.stay}", lb=0,
-                                                   ub=j.units)
+                                                ub=j.units)
     for t in range(1, DAYS + 1):
         s[t] = m.addVar(vtype=GRB.INTEGER, name=f"s_{t}", lb=0)
 
     # Objective: Minimize the finish time
-    m.setObjective(
-        quicksum(t * x[j, t] for j in jobs for t in range(j.first, j.last + 1)),
-        GRB.MINIMIZE)
+    for j in jobs:
+        m.setObjective(
+            quicksum(t * x[j, t] for t in range(j.first, j.last + 1)),
+            GRB.MINIMIZE)
 
     # Constraints
     for j in jobs:
@@ -287,9 +289,10 @@ def schedule_ramon(jobs):
     for v in m.getVars():
         if v.x > 0 and v.varName.startswith(r'^\d'):
             entry = [int(value) for value in v.varName.split(',')]
-            days[entry[0]].append(entry[1])
+            days[entry[0] - 1].append(entry[1])
 
     return days
+
 
 def schedule_requests_ILP(requests, tools):
     for r in requests:
@@ -335,7 +338,8 @@ def schedule_requests_ILP(requests, tools):
             for r in requests:
                 for r_other in requests:
                     if r_other != r:
-                        m.addConstr(quicksum(x[(r, t, d)] for d in range(day, min(day + r.stay, r.last + 1)) if day in range(r.first, r.last + 1))
+                        m.addConstr(quicksum(x[(r, t, d)] for d in range(day, min(day + r.stay, r.last + 1)) if
+                                             day in range(r.first, r.last + 1))
                                     + quicksum(x[(r_other, t, d_other)] for d_other in
                                                range(max(day, r_other.first),
                                                      min(day + r.stay, r_other.last + 1))) <= 1)
@@ -405,6 +409,7 @@ if __name__ == '__main__':
 
     # Display a file dialog and wait for the user to select a file
     file_path = filedialog.askopenfilename()
+    instance = file_path.split("/")[-1].split(".")[0]
 
     # Record the starting time
     start_time = time.time()
@@ -424,7 +429,7 @@ if __name__ == '__main__':
 
     # Creating the output
     costs, total_dist = final_costs_distance()
-    create_file(file_path.split("/")[-1].split(".")[0] + "sol.txt", costs, total_dist)
+    create_file(instance + "sol.txt", costs, total_dist)
 
     #########################################################
     # Merge vehicle routes if sum of mileage < MAX TRIP DISTANCE
@@ -434,4 +439,5 @@ if __name__ == '__main__':
     elapsed_time = time.time() - start_time
 
     # Print the runtime in seconds
-    print("Runtime:", elapsed_time, "seconds")
+    print(f"\nInstance: {instance}")
+    print(f"Runtime: {elapsed_time:.2f}s")
