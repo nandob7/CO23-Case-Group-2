@@ -141,11 +141,11 @@ def calc_distances():
 # Function to calculate the total costs given a value of distance costs
 def final_costs_distance():
     max_v = 0
-    total_dist = 0
+    mileage = 0
 
     for d in SCHEDULE:
         d.calc_mileage()
-        total_dist += d.mileage
+        mileage += d.mileage
 
         if len(d.routes) > max_v:
             max_v = len(d.routes)
@@ -159,22 +159,164 @@ def final_costs_distance():
     for t in used_tools:
         tool_cost += t.cost
 
-    tot_costs = vehicle_days * VEHICLE_DAY_COST + max_v * VEHICLE_COST + tool_cost + total_dist * DISTANCE_COST
+    tot_costs = vehicle_days * VEHICLE_DAY_COST + max_v * VEHICLE_COST + tool_cost + mileage * DISTANCE_COST
 
-    return tot_costs, total_dist
+    return tot_costs, mileage
 
 
 def order_by_first():
     return sorted(REQUESTS, key=lambda r: (r.tid, r.first))
 
 
+def routing(curr_schedule1):
+    # Problem data
+    num_locations = len(curr_schedule1) + 1
+    num_vehicles = len(curr_schedule1)
+    c2 = VEHICLE_COST + VEHICLE_DAY_COST
+
+    # print(num_locations, ' num loc')
+    # print(num_vehicles, ' num vehic')
+    # print(c2, ' c2')
+    # List indicating if a customer is a pickup (1) or delivery (0)
+    p = [0]
+    for request_id in curr_schedule1:
+        if REQUESTS[request_id - 1].pickup is None:
+            p.append(0)
+    # print(p, ' p')
+    # Create a list with only positive requests
+    curr_schedule2 = []
+    for num in curr_schedule1:
+        if num < 0:
+            num = -num
+        curr_schedule2.append(num)
+
+    # Now we can build the locations list
+    locations_lst = [*range(num_locations)]
+    # print(locations_lst, 'locations')
+
+    # To compute the demands, we'll need to go through each request
+    demands = [0]  # Start with 0 demand for the depot
+    for request_id in curr_schedule1:
+        # The demand for each request is TOOL[request.tid].size * request.units
+        demand = TOOLS[REQUESTS[request_id - 1].tid - 1].size * REQUESTS[request_id - 1].units
+        demands.append(demand)
+    # print(demands, 'demands')
+
+    # Finally, we can extract the coordinates
+    dep = LOCATIONS[DEPOT_COORDINATE]
+    coordinates2 = [(dep.x, dep.y)]  # Start with (0, 0) for the depot
+    for request_id in curr_schedule1:
+        # Every coordinate for a request can be found in LOCATIONS[request.lid]
+        x_coordinate = LOCATIONS[REQUESTS[request_id - 1].lid].x
+        y_coordinate = LOCATIONS[REQUESTS[request_id - 1].lid].y
+        print(x_coordinate, y_coordinate)
+        coordinates2.append((x_coordinate, y_coordinate))
+
+    # print(coordinates2, 'coords')
+
+    # Distance matrix
+    distances = np.zeros((num_locations, num_locations))
+    for i in range(num_locations):
+        for j in range(num_locations):
+            x1, y1 = coordinates2[i]
+            x2, y2 = coordinates2[j]
+            distances[i][j] = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+    # print(distances, 'dists')
+
+    # Create model
+    m = Model("cvrp")
+
+    # Create variables
+    x = {}
+    u = {}
+    y = {}
+
+    for v in range(num_vehicles):
+        y[v] = m.addVar(vtype=GRB.BINARY)
+        for i in locations_lst:
+            if i > 0:
+                u[i] = m.addVar(vtype=GRB.INTEGER)
+            for j in locations_lst:
+                if i != j:
+                    x[i, j, v] = m.addVar(vtype=GRB.BINARY)
+
+    m.setObjective(
+        quicksum(
+            distances[i][j] * DISTANCE_COST * x[i, j, v] for i in locations_lst for j in locations_lst if i != j for v
+            in
+            range(num_vehicles)) +
+        c2 * quicksum(y[v] for v in range(num_vehicles)),
+        GRB.MINIMIZE)
+
+    # Create constraints
+    for v in range(num_vehicles):
+        for i in locations_lst:
+            for j in locations_lst:
+                if i != j:
+                    m.addConstr(y[v] >= x[i, j, v])
+
+    # Add capacity constraints
+    for v in range(num_vehicles):
+        m.addConstr(
+            quicksum(demands[i] * x[i, j, v] for i in locations_lst for j in locations_lst if i != j) <= CAPACITY)
+
+    # Add distance constraints
+    for v in range(num_vehicles):
+        m.addConstr(
+            quicksum(DISTANCES[i][j] * x[i, j, v] for i in locations_lst for j in locations_lst if
+                     i != j) <= MAX_TRIP_DISTANCE)
+
+    # Each location should be visited exactly once
+    for i in locations_lst[1:]:
+        m.addConstr(quicksum(x[i, j, v] for j in locations_lst if i != j for v in range(num_vehicles)) == 1)
+
+    # MTZ constraints
+    for i in locations_lst[1:]:
+        for j in locations_lst[1:]:
+            if i != j:
+                for v in range(num_vehicles):
+                    m.addConstr(u[i] - u[j] + num_locations * x[i, j, v] <= num_locations - 1)
+
+    # Flow constraints
+    for v in range(num_vehicles):
+        for j in locations_lst[1:]:
+            m.addConstr(
+                quicksum(x[i, j, v] for i in locations_lst if i != j) == quicksum(
+                    x[j, k, v] for k in locations_lst if k != j))
+
+    # Depot constraints
+    for v in range(num_vehicles):
+        m.addConstr(quicksum(x[0, j, v] for j in locations_lst[1:]) == y[v])
+        m.addConstr(quicksum(x[i, 0, v] for i in locations_lst[1:]) == y[v])
+
+    # Optimize model
+    m.optimize()
+
+    # Print the optimal solution
+    print()
+    for v in range(num_vehicles):
+        print(f"{v + 1} R", end=" ")
+        route = []
+        for i in locations_lst:
+            for j in locations_lst:
+                if i != j and x[i, j, v].x > 0.5:
+                    if p[i] == 1:
+                        route.append(f"-{i}")
+                    else:
+                        route.append(str(i))
+                    break
+        print(" ".join(route), end=" ")
+        print("0")
+
+
 def schedule_request(day, request):
     is_delivery = request.pickup is None
     new_route = Route(day)
-    new_route.add_visit(request, DISTANCES, ALL_TOOLS, day, is_pickup=not is_delivery)
+    new_route.add_visit(request, DISTANCES, is_pickup=not is_delivery)
     new_route.back_to_depot(REQUESTS, DISTANCES)
 
-    SCHEDULE[day - 1].schedule(request, new_route)
+    SCHEDULE[day - 1].schedule(new_route)
 
     # Updates request status and tools use on the day and duration of stay
     if is_delivery:
@@ -189,16 +331,10 @@ def schedule_request(day, request):
                 if len(assigned_tools) == request.units:
                     break
 
-    # Loop over all vehicles and assigns the route to the first available then breaks.
+    # Loop over all vehicles and assigns the route to the first available then breaks.)
     for v in VEHICLES:
         if v.active[day - 1] == 0:
             v.assign_route(new_route)
-
-            # Assigns vid to the request for tracking and backtracking
-            if is_delivery:
-                request.vid[0] = v.vid
-            else:
-                request.vid[1] = v.vid
             break
 
 
@@ -225,7 +361,6 @@ def plan_schedule(sorted_requests):
             schedule_request(r.pickup, r)
 
     # for i, d in enumerate(schedule):
-    #     print(d)
     #     for rid in d:
     #         if rid > 0:
     #             r = REQUESTS[rid - 1]
@@ -295,6 +430,8 @@ def schedule_ramon(jobs):
 
 
 def schedule_requests_ILP(requests, tools):
+
+    # Add 1 to length of stay as we are not considering picking up and delivering to new request on the same day
     for r in requests:
         r.stay += 1
 
@@ -303,18 +440,24 @@ def schedule_requests_ILP(requests, tools):
 
     # Create variables
     x = {}  # job r starts on machine t at day d
+    y = {}  # machine t used
     for r in requests:
         for t in tools:
             for day in range(1, DAYS + 1):
                 if day in range(r.first, r.last + 1):
                     x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"{day},{r.rid}")
 
-    # Set objective: minimize the maximum lateness
-    max_lateness = m.addVar(vtype=GRB.CONTINUOUS, name="max_lateness")
-    m.addConstr(max_lateness <= 0, "max_lateness_non_positive")
-    m.setObjective(max_lateness, GRB.MINIMIZE)
+    for t in tools:
+        y[t] = m.addVar(vtype=GRB.BINARY, name=f"y_{t}")
+
+    # Set objective: minimize no. tools used
+    m.setObjective(quicksum(y[t] for t in tools), GRB.MINIMIZE)
 
     # Add constraints
+    # Max lateness has to be <= 0
+    max_lateness = m.addVar(vtype=GRB.CONTINUOUS, name="max_lateness")
+    m.addConstr(max_lateness <= 0, "max_lateness_non_positive")
+
     for r in requests:
         # Each job must start exactly r.units number of times
         m.addConstr(quicksum(x[(r, t, day)] for t in tools for day in range(r.first, r.last + 1)) == r.units)
@@ -331,7 +474,7 @@ def schedule_requests_ILP(requests, tools):
     for t in tools:
         for day in range(1, DAYS + 1):
             # Each machine can process at most one job per day
-            m.addConstr(quicksum(x[(r, t, day)] for r in requests if day in range(r.first, r.last + 1)) <= 1)
+            m.addConstr(quicksum(x[(r, t, day)] for r in requests if day in range(r.first, r.last + 1)) <= y[t])
 
             # If a job starts on a machine on a specific day, no other job can start on the same machine during its
             # processing time
@@ -354,7 +497,7 @@ def schedule_requests_ILP(requests, tools):
         r.stay -= 1
 
     for v in m.getVars():
-        if v.x > 0.5:
+        if v.x > 0.5 and not v.varName.startswith("y_"):
             entry = [int(value) for value in v.varName.split(',')]
             days[entry[0] - 1].append(entry[1])
 
@@ -421,11 +564,16 @@ if __name__ == '__main__':
     # Processing input
     read_file(input_lines)
     DISTANCES, max_dist_depot = calc_distances()
-    plot_all()
+    # plot_all()
 
     # Creating the schedule
     priorities = order_by_first()
     plan_schedule(priorities)
+
+    # Linking Scheduling with Routing
+    # schedule = plan_schedule(priorities)
+    # for d in schedule:
+    #     routing(d)
 
     # Creating the output
     costs, total_dist = final_costs_distance()

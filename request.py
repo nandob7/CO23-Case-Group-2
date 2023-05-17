@@ -7,11 +7,7 @@ class Request:
         self.stay = stay
         self.tid = tid
         self.units = units
-        self.start = None
-        self.complete = None
         self.pickup = None
-        self.tools = []
-        self.vid = [0, 0]
 
     def deliver(self, day):
         self.pickup = day + self.stay
