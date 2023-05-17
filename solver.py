@@ -223,6 +223,13 @@ def plan_schedule(sorted_requests):
             schedule_request(i, r)
             schedule_request(r.pickup, r)
 
+    # for i, d in enumerate(schedule):
+    #     print(d)
+    #     for rid in d:
+    #         if rid > 0:
+    #             r = REQUESTS[rid - 1]
+    #             schedule[i + r.stay].append(-r.rid)
+    #
     # return schedule
 
 
@@ -274,10 +281,15 @@ def schedule_ramon(jobs):
     # Optimize model
     m.optimize()
 
-    # Print solution
+    # Return the optimal schedule as a list of lists of requests per day
+    days = [list() for d in range(1, DAYS + 1)]
+
     for v in m.getVars():
-        if v.x > 0 and v.varName.startswith("[]"):
-            print(f"{v.varName} {v.x}")
+        if v.x > 0 and v.varName.startswith(r'^\d'):
+            entry = [int(value) for value in v.varName.split(',')]
+            days[entry[0]].append(entry[1])
+
+    return days
 
 def schedule_requests_ILP(requests, tools):
     for r in requests:
@@ -340,7 +352,7 @@ def schedule_requests_ILP(requests, tools):
     for v in m.getVars():
         if v.x > 0.5:
             entry = [int(value) for value in v.varName.split(',')]
-            days[entry[0]].append(entry[1])
+            days[entry[0] - 1].append(entry[1])
 
     return days
 
@@ -408,11 +420,14 @@ if __name__ == '__main__':
 
     # Creating the schedule
     priorities = order_by_first()
-    plan_schedule(priorities)
+    result = plan_schedule(priorities)
+
+    for i in result:
+        print(i)
 
     # Creating the output
-    costs, total_dist = final_costs_distance()
-    create_file(file_path.split("/")[-1].split(".")[0] + "sol.txt", costs, total_dist)
+    # costs, total_dist = final_costs_distance()
+    # create_file(file_path.split("/")[-1].split(".")[0] + "sol.txt", costs, total_dist)
 
     #########################################################
     # Merge vehicle routes if sum of mileage < MAX TRIP DISTANCE
