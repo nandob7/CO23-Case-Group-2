@@ -119,7 +119,7 @@ def read_coordinate(coordinate):
 def read_request(request):
     rid, lid, first, last, stay, tid, no_tools = (int(part) for part in request.split())
     req = Request(rid, lid, first, last, stay, tid, no_tools)
-    VEHICLES.append(Vehicle(len(VEHICLES) + 1, DAYS))  # VEHICLES.append(Vehicle(rid))
+    VEHICLES.append(Vehicle(len(VEHICLES) + 1, DAYS))
     return req
 
 
@@ -223,6 +223,61 @@ def plan_schedule(sorted_requests):
             schedule_request(i, r)
             schedule_request(r.pickup, r)
 
+    # return schedule
+
+
+def schedule_ramon(jobs):
+    initial_supply = TOOLS[jobs[0].tid - 1].no_tools
+
+    # Model
+    m = Model('scheduling')
+
+    # Variables
+    x = {}
+    r = {}
+    s = {}
+    for j in jobs:
+        for t in range(j.first, j.last + 1):
+            x[j.rid, t] = m.addVar(vtype=GRB.BINARY, name=f"{t},{j.rid}")
+            if t + j.stay <= DAYS:
+                r[j.rid, t + j.stay] = m.addVar(vtype=GRB.INTEGER, name=f"r_{j.rid}_{t + j.stay}", lb=0,
+                                                   ub=j.units)
+    for t in range(1, DAYS + 1):
+        s[t] = m.addVar(vtype=GRB.INTEGER, name=f"s_{t}", lb=0)
+
+    # Objective: Minimize the finish time
+    m.setObjective(
+        quicksum(t * x[j, t] for j in jobs for t in range(j.first, j.last + 1)),
+        GRB.MINIMIZE)
+
+    # Constraints
+    for j in jobs:
+        # Each job should be done once within its time window
+        m.addConstr(quicksum(x[j.rid, t] for t in range(j.first, j.last + 1)) == 1)
+        # The supply released should be equal to the supply used
+        for t in range(j.first, j.last + 1):
+            if t + j.stay <= DAYS:
+                m.addConstr(r[j.rid, t + j.stay] == x[j.rid, t] * j.units)
+
+    for t in range(1, DAYS + 1):
+        released_supply = quicksum(r[j, t] for j in jobs if t - j.stay >= 1 and (j, t) in r)
+        outgoing_supply = quicksum(x[j, t] * j.units for j in jobs if
+                                   j.first <= t <= j.last and t + j.stay <= DAYS)
+        remaining_supply = s[t - 1] if t > 1 else initial_supply
+        m.addConstr(s[t] == remaining_supply + released_supply - outgoing_supply)
+
+    for j in jobs:
+        for t in range(j.first, j.last + 1):
+            # The supply used should be less than or equal to the available supply
+            m.addConstr(x[j.rid, t] * j.units <= s[t])
+
+    # Optimize model
+    m.optimize()
+
+    # Print solution
+    for v in m.getVars():
+        if v.x > 0 and v.varName.startswith("[]"):
+            print(f"{v.varName} {v.x}")
 
 def schedule_requests_ILP(requests, tools):
     for r in requests:
@@ -236,7 +291,7 @@ def schedule_requests_ILP(requests, tools):
     for r in requests:
         for t in tools:
             for day in range(1, DAYS + 1):
-                if r.first <= day <= r.last + r.stay:
+                if day in range(r.first, r.last + 1):
                     x[(r, t, day)] = m.addVar(vtype=GRB.BINARY, name=f"{day},{r.rid}")
 
     # Set objective: minimize the maximum lateness
@@ -261,14 +316,14 @@ def schedule_requests_ILP(requests, tools):
     for t in tools:
         for day in range(1, DAYS + 1):
             # Each machine can process at most one job per day
-            m.addConstr(quicksum(x[(r, t, day)] for r in requests if r.first <= day <= r.last + r.stay) <= 1)
+            m.addConstr(quicksum(x[(r, t, day)] for r in requests if day in range(r.first, r.last + 1)) <= 1)
 
             # If a job starts on a machine on a specific day, no other job can start on the same machine during its
             # processing time
             for r in requests:
                 for r_other in requests:
                     if r_other != r:
-                        m.addConstr(quicksum(x[(r, t, d)] for d in range(day, min(day + r.stay, DAYS + 1)) if r.first <= d <= r.last + r.stay)
+                        m.addConstr(quicksum(x[(r, t, d)] for d in range(day, min(day + r.stay, r.last + 1)) if day in range(r.first, r.last + 1))
                                     + quicksum(x[(r_other, t, d_other)] for d_other in
                                                range(max(day, r_other.first),
                                                      min(day + r.stay, r_other.last + 1))) <= 1)
@@ -358,6 +413,10 @@ if __name__ == '__main__':
     # Creating the output
     costs, total_dist = final_costs_distance()
     create_file(file_path.split("/")[-1].split(".")[0] + "sol.txt", costs, total_dist)
+
+    #########################################################
+    # Merge vehicle routes if sum of mileage < MAX TRIP DISTANCE
+    #########################################################
 
     # Calculate the elapsed time
     elapsed_time = time.time() - start_time
