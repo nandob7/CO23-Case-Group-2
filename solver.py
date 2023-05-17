@@ -420,14 +420,11 @@ if __name__ == '__main__':
 
     # Creating the schedule
     priorities = order_by_first()
-    result = plan_schedule(priorities)
-
-    for i in result:
-        print(i)
+    plan_schedule(priorities)
 
     # Creating the output
-    # costs, total_dist = final_costs_distance()
-    # create_file(file_path.split("/")[-1].split(".")[0] + "sol.txt", costs, total_dist)
+    costs, total_dist = final_costs_distance()
+    create_file(file_path.split("/")[-1].split(".")[0] + "sol.txt", costs, total_dist)
 
     #########################################################
     # Merge vehicle routes if sum of mileage < MAX TRIP DISTANCE
