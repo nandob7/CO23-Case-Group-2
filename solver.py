@@ -209,7 +209,8 @@ def daily_routing_ILP(curr_schedule):
         for j in range(num_locations):
             x1, y1 = coordinates2[i]
             x2, y2 = coordinates2[j]
-            distances[i][j] = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+            distances[i][j] = (np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2) + 500)
 
     # Create model
     m = Model("cvrp")
@@ -249,10 +250,11 @@ def daily_routing_ILP(curr_schedule):
             quicksum(demands[i] * x[i, j, v] for i in locations_lst for j in locations_lst if i != j) <= CAPACITY)
 
     # Add distance constraints
+    dist_constr = []
     for v in range(num_vehicles):
-        m.addConstr(
+        dist_constr.append(m.addConstr(
             quicksum(distances[i][j] * x[i, j, v] for i in locations_lst for j in locations_lst if
-                     i != j) <= MAX_TRIP_DISTANCE)
+                     i != j) <= MAX_TRIP_DISTANCE))
 
     # Each location should be visited exactly once
     for i in locations_lst[1:]:
@@ -278,15 +280,17 @@ def daily_routing_ILP(curr_schedule):
         m.addConstr(quicksum(x[i, 0, v] for i in locations_lst[1:]) == y[v])
 
     # # Optimize model and limit runtime and distance from optimal solution
-    # m.setParam('Presolve', 2)  # Use aggressive presolve
-    # m.setParam('Cuts', 2)  # Generate aggressive cuts
-    # m.setParam('Heuristics', 0.1)  # Spend 10% of time on heuristics
-    # m.setParam('VarBranch', 0)  # Use pseudocost variable branching
-    # m.setParam('Threads', 4)  # Use 4 threads
-    # m.setParam('NodeMethod', 1)  # Use dual simplex for node relaxations
-    # m.setParam('NodeSelection', 1)  # Select node with best bound
+    m.setParam('Presolve', 2)  # Use aggressive presolve
+    m.setParam('Cuts', 2)  # Generate aggressive cuts
+    m.setParam('Heuristics', 0.1)  # Spend 10% of time on heuristics
+    m.setParam('VarBranch', 0)  # Use pseudocost variable branching
+    m.setParam('Threads', 4)  # Use 4 threads
+    m.setParam('NodeMethod', 1)  # Use dual simplex for node relaxations
+    m.setParam('NodeSelection', 1)  # Select node with best bound
 
-    m.setParam('MIPGap', 0.1)
+    # for c in dist_constr:
+    #     c.UB = MAX_TRIP_DISTANCE
+    m.setParam('MIPGap', 0.01)
 
     m.optimize()
 
@@ -381,14 +385,6 @@ def plan_schedule(sorted_requests, plan):
         for i, res in enumerate(result):
             for req in res:
                 schedule[i].append(req)
-
-        if t.tid == 1:
-            for d in schedule:
-                print(d)
-                stays = []
-                for r in d:
-                    stays.append(REQUESTS[r-1].stay)
-                print(stays)
 
     for i, day in enumerate(schedule):
         schedule[i] = list(set(day))
