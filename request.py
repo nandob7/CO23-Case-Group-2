@@ -9,5 +9,6 @@ class Request:
         self.units = units
         self.pickup = None
 
+    # Calculates the pickup day when the delivery is scheduled
     def deliver(self, day):
         self.pickup = day + self.stay

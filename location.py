@@ -7,6 +7,7 @@ class Location:
         self.x = x
         self.y = y
 
+    # Calculates the distance between two coordinates
     def distance(self, other):
         distance = math.sqrt((other.x - self.x) ** 2 + (other.y - self.y) ** 2)
         return math.floor(distance)

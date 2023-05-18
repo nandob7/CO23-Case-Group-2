@@ -85,24 +85,6 @@ def read_file(txt):
         REQUESTS.append(read_request(txt[12 + no_tools + no_coordinates + 4 + i]))
 
 
-# Function to plot all coordinates
-def plot_all():
-    # Plot all coordinates with a blue dot marker
-    plt.plot([c.x for c in LOCATIONS], [c.y for c in LOCATIONS], 'bo')
-
-    # Plot the first coordinate with a red circle marker
-    plt.plot(LOCATIONS[0].x, LOCATIONS[0].y, 'ro')
-
-    # Add a title and axis labels
-    plt.title('Plot of Coordinates')
-    plt.xlabel('X-axis')
-    plt.ylabel('Y-axis')
-
-    # Show the plot
-    plt.grid()
-    plt.show()
-
-
 # Function to read a tool from a string representation
 def read_tool(tool):
     tid, size, max_no, cost = (int(part) for part in tool.split())
@@ -121,6 +103,24 @@ def read_request(request):
     req = Request(rid, lid, first, last, stay, tid, no_tools)
     VEHICLES.append(Vehicle(len(VEHICLES) + 1, DAYS))
     return req
+
+
+# Function to plot all coordinates
+def plot_map():
+    # Plot all coordinates with a blue dot marker
+    plt.plot([c.x for c in LOCATIONS], [c.y for c in LOCATIONS], 'bo')
+
+    # Plot the first coordinate with a red circle marker
+    plt.plot(LOCATIONS[0].x, LOCATIONS[0].y, 'ro')
+
+    # Add a title and axis labels
+    plt.title('Plot of Coordinates')
+    plt.xlabel('X-axis')
+    plt.ylabel('Y-axis')
+
+    # Show the plot
+    plt.grid()
+    plt.show()
 
 
 # Function to create a distance matrix calculating the distances between
@@ -143,6 +143,7 @@ def final_costs_distance():
     max_v = 0
     mileage = 0
 
+    # Calc mileage and total no. of vehicles used
     for d in SCHEDULE:
         d.calc_mileage()
         mileage += d.mileage
@@ -150,10 +151,12 @@ def final_costs_distance():
         if len(d.routes) > max_v:
             max_v = len(d.routes)
 
+    # Calc vehicle active days
     vehicle_days = 0
     for v in VEHICLES:
         vehicle_days += sum(v.active)
 
+    # Calc tool cost based on tool usage
     tool_cost = 0
     used_tools = [t for t in ALL_TOOLS if sum(t.in_use) > 0]
     for t in used_tools:
@@ -164,8 +167,42 @@ def final_costs_distance():
     return tot_costs, mileage
 
 
+# Returns a sorted list of requests, sorted by tool id and first day of time window
 def order_by_first():
     return sorted(REQUESTS, key=lambda r: (r.tid, r.first))
+
+
+# Schedules route of requests on a day
+def schedule_requests(day, requests):
+    new_route = Route(day)
+    for rid in requests:
+        r = REQUESTS[abs(rid) - 1]
+        new_route.add_visit(r, DISTANCES, rid < 0, REQUESTS)
+
+    new_route.back_to_depot(REQUESTS, DISTANCES)
+
+    SCHEDULE[day - 1].schedule(new_route)
+
+    # Updates tools use on the day and duration of stay
+    for rid in requests:
+        if rid > 0:
+            r = REQUESTS[abs(rid) - 1]
+
+            tools = [t for t in ALL_TOOLS if t.tid == r.tid]
+            assigned_tools = []
+            for t in tools:
+                if sum(t.in_use[day - 1: day + r.stay]) == 0:
+                    assigned_tools.append(t)
+                    for d in range(day - 1, day + r.stay):
+                        t.in_use[d] = True
+                    if len(assigned_tools) == r.units:
+                        break
+
+    # Loop over all vehicles and assigns the route to the first available then breaks.)
+    for v in VEHICLES:
+        if v.active[day - 1] == 0:
+            v.assign_route(new_route)
+            break
 
 
 # Finds a feasible efficient routing for day of the daily request schedule
@@ -313,41 +350,11 @@ def daily_routing_ILP(curr_schedule):
     return routes
 
 
-# Schedules route of requests on a day
-def schedule_requests(day, requests):
-    new_route = Route(day)
-    for rid in requests:
-        r = REQUESTS[abs(rid) - 1]
-        new_route.add_visit(r, DISTANCES, rid < 0, REQUESTS)
-
-    new_route.back_to_depot(REQUESTS, DISTANCES)
-
-    SCHEDULE[day - 1].schedule(new_route)
-
-    # Updates tools use on the day and duration of stay
-    for rid in requests:
-        if rid > 0:
-            r = REQUESTS[abs(rid) - 1]
-
-            tools = [t for t in ALL_TOOLS if t.tid == r.tid]
-            assigned_tools = []
-            for t in tools:
-                if sum(t.in_use[day - 1: day + r.stay]) == 0:
-                    assigned_tools.append(t)
-                    for d in range(day - 1, day + r.stay):
-                        t.in_use[d] = True
-                    if len(assigned_tools) == r.units:
-                        break
-
-    # Loop over all vehicles and assigns the route to the first available then breaks.)
-    for v in VEHICLES:
-        if v.active[day - 1] == 0:
-            v.assign_route(new_route)
-            break
-
-
+# Schedules a single request as a route
 def schedule_request(day, request):
     is_delivery = request.pickup is None
+
+    # Creates single request route
     new_route = Route(day)
     new_route.add_visit(request, DISTANCES, not is_delivery, REQUESTS)
     new_route.back_to_depot(REQUESTS, DISTANCES)
@@ -374,6 +381,7 @@ def schedule_request(day, request):
             break
 
 
+# Returns a schedule with all requests per day and plans them if plan = True
 def plan_schedule(sorted_requests, plan):
     schedule = [list() for i in range(1, DAYS + 1)]
     for t in TOOLS:
@@ -405,6 +413,7 @@ def plan_schedule(sorted_requests, plan):
     return schedule
 
 
+# ILP that returns a list of lists of requests per day using Gurobi
 def daily_schedule_ILP(requests, tools):
     # Add 1 to length of stay as we are not considering picking up and delivering to new request on the same day
     for r in requests:
@@ -469,8 +478,6 @@ def daily_schedule_ILP(requests, tools):
     m.setParam('VarBranch', 0)  # Use pseudocost variable branching
     m.setParam('Threads', 4)  # Use 4 threads
     m.setParam('NodeMethod', 1)  # Use dual simplex for node relaxations
-    m.setParam('NodeSelection', 1)  # Select node with best bound
-
     m.optimize()
 
     # Return the optimal schedule as a list of lists of requests per day
@@ -488,7 +495,7 @@ def daily_schedule_ILP(requests, tools):
 
 
 # Function that creates the output file
-def create_file(filename, total_costs, total_distance):
+def create_output(filename, total_costs, total_distance):
     with open(filename, 'w') as f:
         f.write(f'DATASET = {DATASET}\n')
         f.write(f'NAME = {NAME}\n\n')
@@ -547,27 +554,27 @@ if __name__ == '__main__':
     # Processing input
     read_file(input_lines)
     DISTANCES, max_dist_depot = calc_distances()
-    # plot_all()
+    plot_map()
 
     # Order the requests by tool id and release date
     priorities = order_by_first()
 
     # Create a daily schedule of requests
-    schedule = plan_schedule(priorities, plan=False)
+    schedule = plan_schedule(priorities, plan=True) # For routing -> plan=False and uncomment the next lines of code
 
-    # Find routes for each day of the daily request schedule
-    daily_routes = []
-    for d in schedule:
-        daily_routes.append(daily_routing_ILP(d))
-
-    # Plan the routes for each day
-    for i, day in enumerate(daily_routes):
-        for routes in day:
-            schedule_requests(i + 1, routes)
+    # # Find routes for each day of the daily request schedule
+    # daily_routes = []
+    # for d in schedule:
+    #     daily_routes.append(daily_routing_ILP(d))
+    #
+    # # Plan the routes for each day
+    # for i, day in enumerate(daily_routes):
+    #     for routes in day:
+    #         schedule_requests(i + 1, routes)
 
     # Creating the output
     costs, total_dist = final_costs_distance()
-    create_file(instance + "sol.txt", costs, total_dist)
+    create_output(instance + "sol.txt", costs, total_dist)
 
     #########################################################
     # Merge vehicle routes if sum of mileage < MAX TRIP DISTANCE
