@@ -9,8 +9,8 @@ class Route:
         self.vid = 0
 
     # Add a visited location and extra mileage to the route
-    def add_visit(self, request, distances, is_pickup):
-        self.mileage += distances[request.lid, self.visited[-1]]
+    def add_visit(self, request, distances, is_pickup, requests):
+        self.mileage += distances[request.lid, requests[abs(self.visited[-1]) - 1].lid]
 
         if not is_pickup:
             self.visited.append(request.rid)

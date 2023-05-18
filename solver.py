@@ -168,51 +168,40 @@ def order_by_first():
     return sorted(REQUESTS, key=lambda r: (r.tid, r.first))
 
 
-def routing(curr_schedule1):
+# Finds a feasible efficient routing for day of the daily request schedule
+def daily_routing_ILP(curr_schedule):
     # Problem data
-    num_locations = len(curr_schedule1) + 1
-    num_vehicles = len(curr_schedule1)
+    num_locations = len(curr_schedule) + 1
+    num_vehicles = len(curr_schedule)
     c2 = VEHICLE_COST + VEHICLE_DAY_COST
 
-    # print(num_locations, ' num loc')
-    # print(num_vehicles, ' num vehic')
-    # print(c2, ' c2')
     # List indicating if a customer is a pickup (1) or delivery (0)
     p = [0]
-    for request_id in curr_schedule1:
-        if REQUESTS[request_id - 1].pickup is None:
+    for rid in curr_schedule:
+        if REQUESTS[abs(rid) - 1].pickup is None:
             p.append(0)
-    # print(p, ' p')
-    # Create a list with only positive requests
-    curr_schedule2 = []
-    for num in curr_schedule1:
-        if num < 0:
-            num = -num
-        curr_schedule2.append(num)
+        else:
+            p.append(1)
 
     # Now we can build the locations list
     locations_lst = [*range(num_locations)]
-    # print(locations_lst, 'locations')
 
     # To compute the demands, we'll need to go through each request
     demands = [0]  # Start with 0 demand for the depot
-    for request_id in curr_schedule1:
+    for rid in curr_schedule:
         # The demand for each request is TOOL[request.tid].size * request.units
-        demand = TOOLS[REQUESTS[request_id - 1].tid - 1].size * REQUESTS[request_id - 1].units
+        demand = TOOLS[REQUESTS[abs(rid) - 1].tid - 1].size * REQUESTS[abs(rid) - 1].units
         demands.append(demand)
-    # print(demands, 'demands')
 
     # Finally, we can extract the coordinates
     dep = LOCATIONS[DEPOT_COORDINATE]
-    coordinates2 = [(dep.x, dep.y)]  # Start with (0, 0) for the depot
-    for request_id in curr_schedule1:
+    coordinates2 = [(dep.x, dep.y)]
+    for rid in curr_schedule:
         # Every coordinate for a request can be found in LOCATIONS[request.lid]
-        x_coordinate = LOCATIONS[REQUESTS[request_id - 1].lid].x
-        y_coordinate = LOCATIONS[REQUESTS[request_id - 1].lid].y
-        print(x_coordinate, y_coordinate)
-        coordinates2.append((x_coordinate, y_coordinate))
+        x_coordinate = LOCATIONS[REQUESTS[abs(rid) - 1].lid].x
+        y_coordinate = LOCATIONS[REQUESTS[abs(rid) - 1].lid].y
 
-    # print(coordinates2, 'coords')
+        coordinates2.append((x_coordinate, y_coordinate))
 
     # Distance matrix
     distances = np.zeros((num_locations, num_locations))
@@ -221,8 +210,6 @@ def routing(curr_schedule1):
             x1, y1 = coordinates2[i]
             x2, y2 = coordinates2[j]
             distances[i][j] = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-
-    # print(distances, 'dists')
 
     # Create model
     m = Model("cvrp")
@@ -264,7 +251,7 @@ def routing(curr_schedule1):
     # Add distance constraints
     for v in range(num_vehicles):
         m.addConstr(
-            quicksum(DISTANCES[i][j] * x[i, j, v] for i in locations_lst for j in locations_lst if
+            quicksum(distances[i][j] * x[i, j, v] for i in locations_lst for j in locations_lst if
                      i != j) <= MAX_TRIP_DISTANCE)
 
     # Each location should be visited exactly once
@@ -290,30 +277,75 @@ def routing(curr_schedule1):
         m.addConstr(quicksum(x[0, j, v] for j in locations_lst[1:]) == y[v])
         m.addConstr(quicksum(x[i, 0, v] for i in locations_lst[1:]) == y[v])
 
-    # Optimize model
+    # # Optimize model and limit runtime and distance from optimal solution
+    # m.setParam('Presolve', 2)  # Use aggressive presolve
+    # m.setParam('Cuts', 2)  # Generate aggressive cuts
+    # m.setParam('Heuristics', 0.1)  # Spend 10% of time on heuristics
+    # m.setParam('VarBranch', 0)  # Use pseudocost variable branching
+    # m.setParam('Threads', 4)  # Use 4 threads
+    # m.setParam('NodeMethod', 1)  # Use dual simplex for node relaxations
+    # m.setParam('NodeSelection', 1)  # Select node with best bound
+
+    m.setParam('MIPGap', 0.1)
+
     m.optimize()
 
     # Print the optimal solution
-    print()
+    routes = []
     for v in range(num_vehicles):
-        print(f"{v + 1} R", end=" ")
         route = []
         for i in locations_lst:
             for j in locations_lst:
                 if i != j and x[i, j, v].x > 0.5:
-                    if p[i] == 1:
-                        route.append(f"-{i}")
-                    else:
-                        route.append(str(i))
+                    if i != 0:
+                        if p[i] == 1:
+                            route.append(- curr_schedule[i - 1])
+                        else:
+                            route.append(curr_schedule[i - 1])
                     break
-        print(" ".join(route), end=" ")
-        print("0")
+        if len(route) > 0:
+            routes.append(route)
+
+    return routes
+
+
+# Schedules route of requests on a day
+def schedule_requests(day, requests):
+    new_route = Route(day)
+    for rid in requests:
+        r = REQUESTS[abs(rid) - 1]
+        new_route.add_visit(r, DISTANCES, rid < 0, REQUESTS)
+
+    new_route.back_to_depot(REQUESTS, DISTANCES)
+
+    SCHEDULE[day - 1].schedule(new_route)
+
+    # Updates tools use on the day and duration of stay
+    for rid in requests:
+        if rid > 0:
+            r = REQUESTS[abs(rid) - 1]
+
+            tools = [t for t in ALL_TOOLS if t.tid == r.tid]
+            assigned_tools = []
+            for t in tools:
+                if sum(t.in_use[day - 1: day + r.stay]) == 0:
+                    assigned_tools.append(t)
+                    for d in range(day - 1, day + r.stay):
+                        t.in_use[d] = True
+                    if len(assigned_tools) == r.units:
+                        break
+
+    # Loop over all vehicles and assigns the route to the first available then breaks.)
+    for v in VEHICLES:
+        if v.active[day - 1] == 0:
+            v.assign_route(new_route)
+            break
 
 
 def schedule_request(day, request):
     is_delivery = request.pickup is None
     new_route = Route(day)
-    new_route.add_visit(request, DISTANCES, is_pickup=not is_delivery)
+    new_route.add_visit(request, DISTANCES, not is_delivery, REQUESTS)
     new_route.back_to_depot(REQUESTS, DISTANCES)
 
     SCHEDULE[day - 1].schedule(new_route)
@@ -338,99 +370,46 @@ def schedule_request(day, request):
             break
 
 
-def plan_schedule(sorted_requests):
+def plan_schedule(sorted_requests, plan):
     schedule = [list() for i in range(1, DAYS + 1)]
     for t in TOOLS:
         req_lst = [r for r in sorted_requests if r.tid == t.tid]
         tool_lst = [tool for tool in ALL_TOOLS if t.tid == tool.tid]
 
-        result = schedule_requests_ILP(req_lst, tool_lst)
-        # result = schedule_ramon(req_lst)
+        result = daily_schedule_ILP(req_lst, tool_lst)
 
         for i, res in enumerate(result):
             for req in res:
                 schedule[i].append(req)
 
+        if t.tid == 1:
+            for d in schedule:
+                print(d)
+                stays = []
+                for r in d:
+                    stays.append(REQUESTS[r-1].stay)
+                print(stays)
+
     for i, day in enumerate(schedule):
         schedule[i] = list(set(day))
 
-    for i, day in enumerate(schedule):
-        for rid in day:
-            r = REQUESTS[rid - 1]
-            schedule_request(i + 1, r)
-            schedule_request(r.pickup, r)
+    if plan:
+        for i, day in enumerate(schedule):
+            for rid in day:
+                r = REQUESTS[rid - 1]
+                schedule_request(i + 1, r)
+                schedule_request(r.pickup, r)
 
-    # for i, d in enumerate(schedule):
-    #     for rid in d:
-    #         if rid > 0:
-    #             r = REQUESTS[rid - 1]
-    #             schedule[i + r.stay].append(-r.rid)
-    #
-    # return schedule
+    for i, d in enumerate(schedule):
+        for rid in d:
+            if rid > 0:
+                r = REQUESTS[rid - 1]
+                schedule[i + r.stay].append(-r.rid)
 
-
-def schedule_ramon(jobs):
-    initial_supply = TOOLS[jobs[0].tid - 1].max_no
-
-    # Model
-    m = Model('scheduling')
-
-    # Variables
-    x = {}
-    r = {}
-    s = {}
-    for j in jobs:
-        for t in range(j.first, j.last + 1):
-            x[j.rid, t] = m.addVar(vtype=GRB.BINARY, name=f"{t},{j.rid}")
-            if t + j.stay <= DAYS:
-                r[j.rid, t + j.stay] = m.addVar(vtype=GRB.INTEGER, name=f"r_{j.rid}_{t + j.stay}", lb=0,
-                                                ub=j.units)
-    for t in range(1, DAYS + 1):
-        s[t] = m.addVar(vtype=GRB.INTEGER, name=f"s_{t}", lb=0)
-
-    # Objective: Minimize the finish time
-    for j in jobs:
-        m.setObjective(
-            quicksum(t * x[j, t] for t in range(j.first, j.last + 1)),
-            GRB.MINIMIZE)
-
-    # Constraints
-    for j in jobs:
-        # Each job should be done once within its time window
-        m.addConstr(quicksum(x[j.rid, t] for t in range(j.first, j.last + 1)) == 1)
-        # The supply released should be equal to the supply used
-        for t in range(j.first, j.last + 1):
-            if t + j.stay <= DAYS:
-                m.addConstr(r[j.rid, t + j.stay] == x[j.rid, t] * j.units)
-
-    for t in range(1, DAYS + 1):
-        released_supply = quicksum(r[j, t] for j in jobs if t - j.stay >= 1 and (j, t) in r)
-        outgoing_supply = quicksum(x[j, t] * j.units for j in jobs if
-                                   j.first <= t <= j.last and t + j.stay <= DAYS)
-        remaining_supply = s[t - 1] if t > 1 else initial_supply
-        m.addConstr(s[t] == remaining_supply + released_supply - outgoing_supply)
-
-    for j in jobs:
-        for t in range(j.first, j.last + 1):
-            # The supply used should be less than or equal to the available supply
-            m.addConstr(x[j.rid, t] * j.units <= s[t])
-
-    # Optimize model
-    m.optimize()
-
-    # Return the optimal schedule as a list of lists of requests per day
-    days = [list() for d in range(1, DAYS + 1)]
-
-    for v in m.getVars():
-        if v.x > 0 and v.varName.startswith(r'^\d'):
-            entry = [int(value) for value in v.varName.split(',')]
-            days[entry[0] - 1].append(entry[1])
-
-    return days
+    return schedule
 
 
-def schedule_requests_ILP(requests, tools):
-
+def daily_schedule_ILP(requests, tools):
     # Add 1 to length of stay as we are not considering picking up and delivering to new request on the same day
     for r in requests:
         r.stay += 1
@@ -488,6 +467,14 @@ def schedule_requests_ILP(requests, tools):
                                                      min(day + r.stay, r_other.last + 1))) <= 1)
 
     # Optimize model
+    m.setParam('Presolve', 2)  # Use aggressive presolve
+    m.setParam('Cuts', 2)  # Generate aggressive cuts
+    m.setParam('Heuristics', 0.1)  # Spend 10% of time on heuristics
+    m.setParam('VarBranch', 0)  # Use pseudocost variable branching
+    m.setParam('Threads', 4)  # Use 4 threads
+    m.setParam('NodeMethod', 1)  # Use dual simplex for node relaxations
+    m.setParam('NodeSelection', 1)  # Select node with best bound
+
     m.optimize()
 
     # Return the optimal schedule as a list of lists of requests per day
@@ -566,14 +553,21 @@ if __name__ == '__main__':
     DISTANCES, max_dist_depot = calc_distances()
     # plot_all()
 
-    # Creating the schedule
+    # Order the requests by tool id and release date
     priorities = order_by_first()
-    plan_schedule(priorities)
 
-    # Linking Scheduling with Routing
-    # schedule = plan_schedule(priorities)
-    # for d in schedule:
-    #     routing(d)
+    # Create a daily schedule of requests
+    schedule = plan_schedule(priorities, plan=False)
+
+    # Find routes for each day of the daily request schedule
+    daily_routes = []
+    for d in schedule:
+        daily_routes.append(daily_routing_ILP(d))
+
+    # Plan the routes for each day
+    for i, day in enumerate(daily_routes):
+        for routes in day:
+            schedule_requests(i + 1, routes)
 
     # Creating the output
     costs, total_dist = final_costs_distance()
