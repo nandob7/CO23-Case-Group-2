@@ -1,9 +1,0 @@
-DATASET = co2020 case challenge part
-NAME = tools over vehicles over vehicle days over distance with 100 requests over 10 days
-
-MAX_NUMBER_OF_VEHICLES = 0
-NUMBER_OF_VEHICLE_DAYS = 0
-TOOL_USE = 0 0 0 0 0
-DISTANCE = 0
-COST = 0
-
